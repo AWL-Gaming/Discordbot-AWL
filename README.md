@@ -1,0 +1,415 @@
+# Discord Bot Plugin for Valheim
+
+Enables two-way communication between your Valheim server and Discord channels.
+
+## Features
+
+- 🗨️ **Chat Integration**: Send messages between Discord and in-game chat
+- 🤖 **Discord Commands**: Execute server commands from Discord
+- 📢 **Server Notifications**: Get notified when the server starts up
+- 💻 **Death GIF / Screenshot**: On player death, send gif or image of event along side a death quip
+- ✨ **Screenshot** to Discord chat command / hotkey
+- 📱 **ChatAI**: Prompt AI service and improve death quips
+
+## Prerequisites
+
+- **BepInEx** installed
+- [JsonDotNet](https://thunderstore.io/c/valheim/p/ValheimModding/JsonDotNET) installed
+- **Discord Webhooks** configured for your server
+- **Discord Bot Token** (If you want your discord server to be able to send messages into your game)
+- Required on `client` and `server`
+
+## Installation
+
+### Discord Setup
+
+#### How to create Discord Bot
+
+1. **Create a Discord Application**
+    - Go to the [Discord Developer Portal](https://discord.com/developers/applications)
+    - Click "New Application" (top-right)
+    - Give your application a name (e.g. ValheimBot) and click "Create".
+2. **Add a `Bot` to the Application**
+    - In the left sidebar, click "Bot"
+    - Click "Add Bot" ----> confirm by clicking "Yes, do it!"
+    - You now have a bot user attached to your application.
+    - You must enable `Message Content Intent`
+3. **Copy the `Bot Token`**
+    - On the Bot page, under the "Token" section, click "Reset Token" (or "Copy" if it is already shown).
+    - Confirm, then copy the generated token.
+    - Keep this token secret!, if it leaks, click "Reset Token" to generate a new one
+4. **Invite the Bot to your Discord Server**
+    - In the sidebar, click "O2Auth2" ----> "URL Generator".
+    - Under **SCOPES**, check `bot`
+    - Under **BOT PERMISSIONS**, check the permissions your bot will need
+        - Send Messages
+        - Read Message History
+        - View Channels
+    - Copy the generated URL at the bottom
+    - Open that URL in your browser and invite the bot to your Discord server
+
+### Creating Discord Webhooks
+
+Webhooks allow the plugin to send messages to Discord channels without using the bot's identity.
+
+1. **Create Webhook**
+    - Go to "Integrations" tab
+    - Click "Create Webhook"
+    - Give it a name (e.g., "Valheim Chat")
+
+2. **Copy Webhook URL**
+    - Click "Copy Webhook URL"
+    - Save this URL for your plugin configuration
+
+### Getting Channel IDs
+
+You'll need Discord Channel IDs for the bot to read messages:
+
+1. **Enable Developer Mode**
+    - In Discord, go to User Settings (gear icon)
+    - Go to "Advanced" settings
+    - Enable "Developer Mode"
+
+2. **Copy Channel IDs**
+    - Right-click on each channel you want to use
+    - Select "Copy ID"
+    - Save these IDs for your configuration
+
+### Configure the Plugin
+
+After first run, configuration files will be generated in `BepInEx/config/`. Edit the Discord Bot config file to set up your:
+
+- Channel IDs
+- Webhook URLs
+- Bot Token [SERVER ONLY]
+
+## Configurations
+
+Find DiscordBot plugin configurations in `BepinEx/config/RustyMods.DiscordBot.cfg`
+
+Here's what your configuration might look like:
+
+```ini
+[1 - General]
+
+## If on, the configuration is locked and can be changed by server admins only. [Synced with Server]
+Lock Configuration = On
+
+## Set interval between check for messages in discord, in seconds [Synced with Server]
+Poll Interval = 5
+
+## If on, errors will log to console as warnings [Synced with Server]
+Log Errors = Off
+
+[2 - Notifications]
+
+## Set webhook to receive notifications, like server start, stop, save etc... [Synced with Server]
+Webhook URL = https://discord.com/api/webhooks/1405043541192741007/X-WuWkr_0ApZ4JHq7_TOeMHfRCErXgUZkVnE_oh_yfy2mWKRShHK-wDzdasdWWDzdjk
+
+## If on, bot will send message when server is starting [Synced with Server]
+Startup = Off
+
+## If on, bot will send message when server is shutting down [Synced with Server]
+Shutdown = Off
+
+## If on, bot will send message when server is saving [Synced with Server]
+Saving = Off
+
+## If on, bot will send message when player dies [Synced with Server]
+On Death = On
+
+## If on, bot will send message when new player connects [Synced with Server]
+New Connection = Off
+
+[3 - Chat]
+
+## Set discord webhook to display chat messages [Synced with Server]
+Webhook URL = https://discord.com/api/webhooks/1404119063046652035/OqBFopk29Cku3_4TiLCJVwaagkyLVsdlkjasd239-sdjzdHH7vHh_RfWy1d3
+
+## Set channel ID to monitor for messages [Synced with Server]
+Channel ID = 9839768234583209
+
+## If on, bot will send message when player shouts and monitor discord for messages [Synced with Server]
+Enabled = On
+
+[4 - Commands]
+
+## Set discord webhook to display feedback messages from commands [Synced with Server]
+Webhook URL = https://discord.com/api/webhooks/1404941903144685779/gc8DFwfIO5eUnxzoJ1Dqsi-iX68GLUMWz_3sdlkjasd9DDAS7tKfB1qWuYN
+
+## Set channel ID to monitor for input commands [Synced with Server]
+Channel ID = 1106947857194165898
+
+## List of discord admins, who can run commands [Synced with Server]
+Discord Admin = .rusty,.warp
+
+[5 - Setup]
+## Add bot token here, server only
+BOT TOKEN = 
+
+
+```
+
+## Usage
+
+### In-Game to Discord
+
+- Any message sent as a `shout` in the in-game chat will appear in your configured Discord chat channel
+- Server events (like startup) will be posted to the notification channel
+- Death events will be posted to the death feed channel
+
+### Discord to In-Game
+
+- Messages sent in the configured Discord chat channel will appear in the in-game chat
+- Commands sent in the configured Discord command channel will be executed on the server
+
+### Discord Commands
+
+Send commands in your designated command channel:
+- Commands should start with a command prefix `!`
+- Example: `!listplayers` to list online players
+- Example: `!save` to save the world
+
+## Commands
+
+**Legend:**
+```
+- <string:Parameter> - Text parameter
+- <int:Parameter> - Number parameter
+- <float:Parameter> - Decimal number parameter
+- <parameter?> - Optional parameter
+- [Admin Only] - Command restricted to registered Discord admins
+```
+### General Commands
+
+### ❓ `help`
+**Description:** List of all available commands  
+**Usage:** `!help`
+
+### ⚠️ `listadmins` **[Admin Only]**
+**Description:** List of discord admins registered to plugin  
+**Usage:** `!listadmins`
+
+---
+
+### Player Management
+
+### 🐉 `listplayers` **[Admin Only]**
+**Description:** List of active players with their positions  
+**Usage:** `!listplayers`
+
+### ❌ `kick` **[Admin Only]**
+**Description:** Kicks player from server  
+**Usage:** `!kick <string:PlayerName>`
+
+### 🎁 `give` **[Admin Only]**
+**Description:** Adds item directly into player inventory  
+**Usage:** `!give <string:PlayerName> <string:ItemName> <int:Stack> <int?:Quality> <int?:Variant>`  
+**Example:** `!give PlayerName IronSword 1 3 0`
+
+### 🌹 `pos` **[Admin Only]**
+**Description:** Get player's current position coordinates  
+**Usage:** `!pos <string:PlayerName>`
+
+### 🐅 `die` **[Admin Only]**
+**Description:** Kills specified player  
+**Usage:** `!die <string:PlayerName>`
+
+---
+
+### Teleportation Commands
+
+### 🏃 `teleport` **[Admin Only]**
+**Description:** Teleport player to location, bed, or another player  
+**Usage:**
+- `teleport <string:PlayerName> bed` - Teleport to bed
+- `teleport <string:PlayerName> <string:OtherPlayerName>` - Teleport to another player
+- `teleport <string:PlayerName> <float:x> <float:y> <float:z>` - Teleport to coordinates
+
+### ⛳ `teleportall` **[Admin Only]**
+**Description:** Teleports all players to specified coordinates  
+**Usage:** `!teleportall <float:x> <float:y> <float:z>`
+
+---
+
+### Environment & Weather
+
+### 🌪️ `listenv`
+**Description:** List of available environments  
+**Usage:** `!listenv`
+
+### ✨ `env` **[Admin Only]**
+**Description:** Force environment on all players  
+**Usage:** `!env <string:EnvironmentName>`  
+**Example:** `!env Twilight_Clear`
+
+### ✨ `resetenv` **[Admin Only]**
+**Description:** Reset environment on all players to default  
+**Usage:** `!resetenv`
+
+---
+
+### Spawning & Creatures
+
+### ❗ `spawn` **[Admin Only]**
+**Description:** Spawns prefab at location  
+**Usage:**
+- `!spawn <string:PrefabName> <int:Level> <string:PlayerName>` - Spawn at player location
+- `!spawn <string:PrefabName> <int:Level> <float:x> <float:y> <float:z>` - Spawn at coordinates  
+  **Example:** `!spawn Troll 3 PlayerName`
+
+---
+
+### Events
+
+### 🌙 `listevents` **[Admin Only]**
+**Description:** List of available event names  
+**Usage:** `!listevents`
+
+### ⭐ `event` **[Admin Only]**
+**Description:** Starts an event on a player  
+**Usage:** `!event <string:EventName> <string:PlayerName>`  
+**Example:** `!event Wolves PlayerName`
+
+---
+
+### Player Effects & Skills
+
+### 🚀 `liststatus`
+**Description:** List of available status effects  
+**Usage:** `!liststatus`
+
+### 🍕 `addstatus` **[Admin Only]**
+**Description:** Add status effect to player  
+**Usage:** `!addstatus <string:PlayerName> <string:StatusEffect> <float:Duration>`  
+**Example:** `!addstatus PlayerName Rested 300`
+
+### 🙏 `listskills`
+**Description:** List of available skills  
+**Usage:** `!listskills`
+
+### 💪 `raiseskill` **[Admin Only]**
+**Description:** Raises player's skill level  
+**Usage:** `!raiseskill <string:PlayerName> <string:SkillType> <float:Amount>`  
+**Example:** `!raiseskill PlayerName Swords 10`
+
+---
+
+### Server Management
+
+### 💾 `save` **[Admin Only]**
+**Description:** Save player profiles and world  
+**Usage:** `!save`
+
+### 😊 `message` **[Admin Only]**
+**Description:** Broadcast message to all players (appears center screen)  
+**Usage:** `!message <message text>`  
+**Example:** `!message Server restart in 5 minutes!`
+
+### 🦄 `setkey` **[Admin Only]**
+**Description:** Set global key (affects world state)  
+**Usage:** `!setkey <string:GlobalKeyName>`  
+**Example:** `!setkey defeated_bonemass`
+
+---
+
+### Admin Management
+
+### 🔑 `addadmin` **[Admin Only]**
+**Description:** Adds discord username to admin list  
+**Usage:** `!addadmin <string:Username>`
+
+### 🔒 `removeadmin` **[Admin Only]**
+**Description:** Remove discord username from admin list  
+**Usage:** `!removeadmin <string:Username>`
+
+---
+
+### ChatAI
+
+#### 🤖 AI Chat Integration
+The plugin supports multiple AI providers for enhanced chat interactions and death quips.
+Each client configures their own API keys, ensuring token usage and costs remain separate.
+
+#### 🔑 Keys
+- Client-Managed Keys: Each user provides their own API keys
+- Enhanced Death Quips: AI-generated unique death messages when API keys are configured
+
+Multiple Providers: Choose from 4 different AI services
+
+#### 💡 Provider Recommendations & Notes
+Free Tier Options:
+- Gemini - Offers limited free usage through Google AI Studio, making it the best choice for cost-free experimentation
+- OpenRouter - Provides access to several free models from various providers
+
+Paid Services:
+- ChatGPT - Requires paid OpenAI API credits (no free tier available)
+- DeepSeek - While competitively priced, requires API credit purchase
+
+Haven't fully tested longevity of this feature, but can be a fun gimmick for a little while
+```
+[8 - AI]
+
+## Set which Artificial Intelligence API to use [Not Synced with Server]
+# Setting type: AIService
+# Default value: Gemini
+# Acceptable values: ChatGPT, Gemini, DeepSeek, OpenRouter
+Provider = Gemini
+
+## Set ChatGPT key [Not Synced with Server]
+# Setting type: String
+# Default value:
+ChatGPT =
+
+## Set Gemini key [Not Synced with Server]
+# Setting type: String
+# Default value:
+Gemini = 
+
+## Set DeepSeek key [Not Synced with Server]
+# Setting type: String
+# Default value:
+DeepSeek = 
+
+## Set OpenRouter key [Not Synced with Server]
+# Setting type: String
+# Default value:
+OpenRouter = 
+
+## Set OpenRouter Model [Not Synced with Server]
+# Setting type: OpenRouterModel
+# Default value: Claude3_5Sonnet
+# Acceptable values: Claude3_5Sonnet, GeminiFlashFree, Llama31_8B, Llama31_70B, WizardLM8x22B, GPT4oMini, DeepSeekChat
+OpenRouter Model = Claude3_5Sonnet
+```
+
+### Jobs [beta]
+
+Job allows to invoke discord commands on a set interval, beginning whenever the server starts.
+
+Format:
+```yml
+command: !shout
+interval: 1000.0
+args: This is a reoccurring shout message from the server every 16 minutes
+```
+
+Example:
+- List current active players every 30 minutes
+```yml
+command: !listplayers
+interval: 1800
+```
+- Save world and active player profiles, every 1 hour
+```yml
+command: !save
+interval: 3600
+ ```
+
+### Notes
+
+- **Admin Commands:** Commands marked with **[Admin Only]** can only be used by Discord users registered in the admin list
+- **Player Names:** Use exact player names as they appear in-game (case sensitive)
+- **Coordinates:** Use world coordinates (you can get these with the `pos` command)
+- **Item Names:** Use exact prefab names from the game
+- **Error Handling:** The bot will respond with error messages if commands fail or parameters are incorrect
