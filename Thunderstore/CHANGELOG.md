@@ -1,3 +1,10 @@
+# 1.4.2
+
+- Fixed client disconnects after death by replacing oversized single-packet GIF/PNG broker uploads with bounded 24 KiB chunks.
+- Added transfer size, chunk count, timeout, peer, route, attachment-signature, and per-client concurrency validation.
+- Fixed webhook broker JSON deserialization by adding explicit JSON-safe DTO constructors.
+- Reduced the maximum client attachment transfer to 8 MiB and fail safely instead of destabilizing the game connection.
+
 # 1.4.1
 
 - Removed Discord webhook URL synchronization to clients.

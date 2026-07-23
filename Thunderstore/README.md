@@ -2,9 +2,9 @@
 
 AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://github.com/RustyMods/DiscordBot). It preserves the existing two-way Valheim and Discord integration while adding resilient AI model discovery, ordered provider/model failover, and safer client capture cleanup.
 
-Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/NOTICE.md).
+Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](NOTICE.md).
 
-## AWL 1.4.1 highlights
+## AWL 1.4.2 highlights
 
 - Gemini model discovery through Google's model catalog, with configured models filtered against what the current API key can actually use.
 - OpenRouter account-aware model discovery, optional free-only filtering, and ordered model failover.
@@ -415,9 +415,9 @@ interval: 3600
 
 ## Development and packaging
 
-- [BUILDING.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/BUILDING.md) contains the reproducible Windows build and validation commands.
-- [PUBLISHING.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/PUBLISHING.md) contains the Thunderstore package/upload procedure and the required upstream permission warning.
-- [NOTICE.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/NOTICE.md) records original-author attribution and redistribution status.
+- [BUILDING.md](BUILDING.md) contains the reproducible Windows build and validation commands.
+- [PUBLISHING.md](PUBLISHING.md) contains the Thunderstore package/upload procedure and the required upstream permission warning.
+- [NOTICE.md](NOTICE.md) records original-author attribution and redistribution status.
 
 ### Notes
 

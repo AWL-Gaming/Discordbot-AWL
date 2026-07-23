@@ -30,17 +30,65 @@ public class Discord : MonoBehaviour
     private bool m_isDownloadingImage;
     private bool m_isDownloadingSound;
 
-    private const int WebhookBrokerProtocolVersion = 1;
+    private const int WebhookBrokerProtocolVersion = 2;
     private const int MaxRemoteWebhookJsonCharacters = 32 * 1024;
-    private const int MaxRemoteAttachmentBytes = 20 * 1024 * 1024;
-    private const int MaxRemoteWebhookPackageBytes = MaxRemoteAttachmentBytes + (MaxRemoteWebhookJsonCharacters * 4) + 1024;
+    private const int MaxRemoteAttachmentBytes = 8 * 1024 * 1024;
+    private const int RemoteAttachmentChunkBytes = 24 * 1024;
+    private const int MaxRemoteAttachmentChunks = (MaxRemoteAttachmentBytes + RemoteAttachmentChunkBytes - 1) / RemoteAttachmentChunkBytes;
+    private const int MaxRemoteControlPackageBytes = (MaxRemoteWebhookJsonCharacters * 4) + 2048;
+    private const int MaxRemoteChunkPackageBytes = RemoteAttachmentChunkBytes + 1024;
     private const int MaxRemoteRequestsPerWindow = 12;
     private const int MaxRemoteAttachmentsPerWindow = 4;
+    private const int MaxConcurrentRemoteTransfers = 8;
     private const float RemoteRequestWindowSeconds = 10f;
     private const float RemoteAttachmentWindowSeconds = 30f;
+    private const float RemoteTransferTimeoutSeconds = 60f;
 
     private static readonly Dictionary<ZRpc, Queue<float>> RemoteWebhookRequestTimes = new();
     private static readonly Dictionary<ZRpc, Queue<float>> RemoteWebhookAttachmentTimes = new();
+    private static readonly Dictionary<ZRpc, RemoteWebhookTransfer> RemoteWebhookTransfers = new();
+
+    private Coroutine? m_remoteAttachmentUpload;
+    private float m_nextRemoteTransferCleanup;
+
+    private sealed class RemoteWebhookTransfer
+    {
+        public readonly string RequestId;
+        public readonly Webhook Webhook;
+        public readonly WebhookRoute Route;
+        public readonly DiscordWebhookData Data;
+        public readonly List<string> Targets;
+        public readonly string MimeType;
+        public readonly string Filename;
+        public readonly byte[] Buffer;
+        public readonly bool[] ReceivedChunks;
+        public int ReceivedChunkCount;
+        public int ReceivedBytes;
+        public float LastActivity;
+
+        public RemoteWebhookTransfer(
+            string requestId,
+            Webhook webhook,
+            WebhookRoute route,
+            DiscordWebhookData data,
+            List<string> targets,
+            string mimeType,
+            string filename,
+            int totalLength,
+            int chunkCount)
+        {
+            RequestId = requestId;
+            Webhook = webhook;
+            Route = route;
+            Data = data;
+            Targets = targets;
+            MimeType = mimeType;
+            Filename = filename;
+            Buffer = new byte[totalLength];
+            ReceivedChunks = new bool[chunkCount];
+            LastActivity = Time.realtimeSinceStartup;
+        }
+    }
 
     public void Awake()
     {
@@ -70,8 +118,22 @@ public class Discord : MonoBehaviour
         }, hooks: DiscordBotPlugin.OnWorldStartHooks, route: WebhookRoute.WorldStart);
     }
 
+    private void Update()
+    {
+        if (!isServer || Time.realtimeSinceStartup < m_nextRemoteTransferCleanup) return;
+        m_nextRemoteTransferCleanup = Time.realtimeSinceStartup + 5f;
+        CleanupExpiredRemoteTransfers();
+    }
+
     private void OnDestroy()
     {
+        if (m_remoteAttachmentUpload != null)
+        {
+            StopCoroutine(m_remoteAttachmentUpload);
+            m_remoteAttachmentUpload = null;
+        }
+
+        RemoteWebhookTransfers.Clear();
         instance = null;
     }
 
@@ -201,6 +263,9 @@ public class Discord : MonoBehaviour
             peer.m_rpc.Register<string, string, bool>(nameof(RPC_ClientBotMessage), RPC_ClientBotMessage);
             peer.m_rpc.Register<string>(nameof(RPC_GetSound), RPC_GetSound);
             peer.m_rpc.Register<ZPackage>(nameof(RPC_WebhookRequest), RPC_WebhookRequest);
+            peer.m_rpc.Register<ZPackage>(nameof(RPC_WebhookAttachmentStart), RPC_WebhookAttachmentStart);
+            peer.m_rpc.Register<ZPackage>(nameof(RPC_WebhookAttachmentChunk), RPC_WebhookAttachmentChunk);
+            peer.m_rpc.Register<ZPackage>(nameof(RPC_WebhookAttachmentComplete), RPC_WebhookAttachmentComplete);
         }
     }
 
@@ -212,6 +277,7 @@ public class Discord : MonoBehaviour
         {
             RemoteWebhookRequestTimes.Remove(peer.m_rpc);
             RemoteWebhookAttachmentTimes.Remove(peer.m_rpc);
+            RemoteWebhookTransfers.Remove(peer.m_rpc);
         }
     }
 
@@ -439,17 +505,56 @@ public class Discord : MonoBehaviour
         string mimeType)
     {
         ZRpc? serverRpc = ZNet.instance?.GetServerRPC();
-        if (serverRpc == null)
+        if (serverRpc == null || !serverRpc.IsConnected())
         {
             OnError?.Invoke("Server webhook broker is unavailable because the server RPC is not connected");
             return;
         }
 
-        string json = JsonConvert.SerializeObject(data);
         byte[] bytes = attachment ?? Array.Empty<byte>();
-        if (json.Length > MaxRemoteWebhookJsonCharacters || bytes.Length > MaxRemoteAttachmentBytes)
+        if (bytes.Length > MaxRemoteAttachmentBytes)
+        {
+            OnError?.Invoke("Webhook attachment exceeded the transport safety limit; sending a text-only fallback");
+            SendTextOnlyWebhookRequest(serverRpc, webhook, route, data);
+            return;
+        }
+
+        if (bytes.Length == 0)
+        {
+            SendTextOnlyWebhookRequest(serverRpc, webhook, route, data);
+            return;
+        }
+
+        if (m_remoteAttachmentUpload != null)
+        {
+            OnError?.Invoke("A webhook attachment is already being uploaded; sending a text-only fallback");
+            SendTextOnlyWebhookRequest(serverRpc, webhook, route, data);
+            return;
+        }
+
+        string json = JsonConvert.SerializeObject(data);
+        if (json.Length == 0 || json.Length > MaxRemoteWebhookJsonCharacters)
         {
             OnError?.Invoke("Webhook broker payload exceeded the configured safety limit");
+            return;
+        }
+
+        string cleanFilename = Path.GetFileName(filename ?? string.Empty);
+        m_remoteAttachmentUpload = StartCoroutine(
+            SendWebhookAttachmentToServer(serverRpc, webhook, route, json, bytes, cleanFilename, mimeType ?? string.Empty));
+    }
+
+    private void SendTextOnlyWebhookRequest(
+        ZRpc serverRpc,
+        Webhook webhook,
+        WebhookRoute route,
+        DiscordWebhookData data)
+    {
+        RemoveAttachmentReferences(data);
+        string json = JsonConvert.SerializeObject(data);
+        if (json.Length == 0 || json.Length > MaxRemoteWebhookJsonCharacters)
+        {
+            OnError?.Invoke("Webhook broker text payload exceeded the configured safety limit");
             return;
         }
 
@@ -458,26 +563,98 @@ public class Discord : MonoBehaviour
         package.Write((int)webhook);
         package.Write((int)route);
         package.Write(json);
-        package.Write(mimeType ?? string.Empty);
-        package.Write(Path.GetFileName(filename ?? string.Empty));
-        package.Write(bytes);
         serverRpc.Invoke(nameof(RPC_WebhookRequest), package);
+    }
+
+    private static void RemoveAttachmentReferences(DiscordWebhookData data)
+    {
+        foreach (Embed embed in data.embeds ?? Array.Empty<Embed>())
+        {
+            if (embed.image?.url?.StartsWith("attachment://", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                embed.image = null;
+            }
+        }
+    }
+
+    private IEnumerator SendWebhookAttachmentToServer(
+        ZRpc serverRpc,
+        Webhook webhook,
+        WebhookRoute route,
+        string json,
+        byte[] attachment,
+        string filename,
+        string mimeType)
+    {
+        string requestId = Guid.NewGuid().ToString("N");
+        int chunkCount = (attachment.Length + RemoteAttachmentChunkBytes - 1) / RemoteAttachmentChunkBytes;
+
+        try
+        {
+            if (chunkCount <= 0 || chunkCount > MaxRemoteAttachmentChunks)
+            {
+                OnError?.Invoke("Webhook attachment required an invalid number of transport chunks");
+                yield break;
+            }
+
+            ZPackage startPackage = new();
+            startPackage.Write(WebhookBrokerProtocolVersion);
+            startPackage.Write(requestId);
+            startPackage.Write((int)webhook);
+            startPackage.Write((int)route);
+            startPackage.Write(json);
+            startPackage.Write(mimeType);
+            startPackage.Write(filename);
+            startPackage.Write(attachment.Length);
+            startPackage.Write(chunkCount);
+            serverRpc.Invoke(nameof(RPC_WebhookAttachmentStart), startPackage);
+
+            for (int chunkIndex = 0; chunkIndex < chunkCount; ++chunkIndex)
+            {
+                if (!serverRpc.IsConnected())
+                {
+                    OnError?.Invoke("Webhook attachment upload stopped because the server connection closed");
+                    yield break;
+                }
+
+                int offset = chunkIndex * RemoteAttachmentChunkBytes;
+                int length = Math.Min(RemoteAttachmentChunkBytes, attachment.Length - offset);
+                byte[] chunk = new byte[length];
+                Buffer.BlockCopy(attachment, offset, chunk, 0, length);
+
+                ZPackage chunkPackage = new();
+                chunkPackage.Write(WebhookBrokerProtocolVersion);
+                chunkPackage.Write(requestId);
+                chunkPackage.Write(chunkIndex);
+                chunkPackage.Write(chunk);
+                serverRpc.Invoke(nameof(RPC_WebhookAttachmentChunk), chunkPackage);
+
+                if ((chunkIndex + 1) % 2 == 0)
+                {
+                    yield return null;
+                }
+            }
+
+            if (!serverRpc.IsConnected())
+            {
+                OnError?.Invoke("Webhook attachment upload stopped because the server connection closed");
+                yield break;
+            }
+
+            ZPackage completePackage = new();
+            completePackage.Write(WebhookBrokerProtocolVersion);
+            completePackage.Write(requestId);
+            serverRpc.Invoke(nameof(RPC_WebhookAttachmentComplete), completePackage);
+        }
+        finally
+        {
+            m_remoteAttachmentUpload = null;
+        }
     }
 
     private static void RPC_WebhookRequest(ZRpc rpc, ZPackage package)
     {
-        if (!(ZNet.instance?.IsServer() ?? false) || instance == null) return;
-        if (package.Size() <= 0 || package.Size() > MaxRemoteWebhookPackageBytes)
-        {
-            DiscordBotPlugin.LogWarning("Rejected oversized webhook broker package");
-            return;
-        }
-
-        if (!ZNet.instance.GetPeers().Any(peer => peer.m_rpc == rpc))
-        {
-            DiscordBotPlugin.LogWarning("Rejected webhook broker request from an unknown peer");
-            return;
-        }
+        if (!CanAcceptRemoteWebhookPackage(rpc, package, MaxRemoteControlPackageBytes)) return;
 
         try
         {
@@ -485,87 +662,342 @@ public class Discord : MonoBehaviour
             int webhookValue = package.ReadInt();
             int routeValue = package.ReadInt();
             string json = package.ReadString();
-            string mimeType = package.ReadString();
-            string filename = package.ReadString();
-            byte[] attachment = package.ReadByteArray();
 
-            if (protocolVersion != WebhookBrokerProtocolVersion ||
-                !Enum.IsDefined(typeof(Webhook), webhookValue) ||
-                !Enum.IsDefined(typeof(WebhookRoute), routeValue))
+            if (!TryValidateRemoteWebhookMetadata(
+                    protocolVersion,
+                    webhookValue,
+                    routeValue,
+                    json,
+                    rpc,
+                    consumeAttachmentLimit: false,
+                    out Webhook webhook,
+                    out WebhookRoute route,
+                    out DiscordWebhookData? data,
+                    out List<string>? targets))
             {
-                DiscordBotPlugin.LogWarning("Rejected malformed webhook broker request");
                 return;
             }
 
-            Webhook webhook = (Webhook)webhookValue;
-            WebhookRoute route = (WebhookRoute)routeValue;
-            if (!IsAllowedRoute(webhook, route))
-            {
-                DiscordBotPlugin.LogWarning("Rejected webhook broker request with an invalid route");
-                return;
-            }
-
-            if (json.Length == 0 || json.Length > MaxRemoteWebhookJsonCharacters || attachment.Length > MaxRemoteAttachmentBytes)
-            {
-                DiscordBotPlugin.LogWarning("Rejected oversized webhook broker request");
-                return;
-            }
-
-            if (!TryConsumeRateLimit(RemoteWebhookRequestTimes, rpc, RemoteRequestWindowSeconds, MaxRemoteRequestsPerWindow))
-            {
-                DiscordBotPlugin.LogWarning("Rejected rate-limited webhook broker request");
-                return;
-            }
-
-            bool hasAttachment = attachment.Length > 0;
-            if (hasAttachment)
-            {
-                if (!TryConsumeRateLimit(RemoteWebhookAttachmentTimes, rpc, RemoteAttachmentWindowSeconds, MaxRemoteAttachmentsPerWindow) ||
-                    !IsAllowedAttachment(webhook, mimeType, filename, attachment))
-                {
-                    DiscordBotPlugin.LogWarning("Rejected invalid or rate-limited webhook attachment request");
-                    return;
-                }
-            }
-            else if (!string.IsNullOrWhiteSpace(mimeType) || !string.IsNullOrWhiteSpace(filename))
-            {
-                DiscordBotPlugin.LogWarning("Rejected inconsistent webhook broker request");
-                return;
-            }
-
-            DiscordWebhookData? data = JsonConvert.DeserializeObject<DiscordWebhookData>(json);
-            if (data == null)
-            {
-                DiscordBotPlugin.LogWarning("Rejected empty webhook broker payload");
-                return;
-            }
-
-            if (!ValidateWebhookData(data, out string validationError))
-            {
-                DiscordBotPlugin.LogWarning($"Rejected webhook broker payload: {validationError}");
-                return;
-            }
-            data.allowed_mentions = new AllowedMentions();
-
-            List<string> targets = DiscordBotPlugin.GetWebhookTargets(webhook, route);
-            if (targets.Count == 0)
-            {
-                DiscordBotPlugin.LogWarning($"No valid Discord webhook is configured for {webhook}/{route}");
-                return;
-            }
-
-            if (hasAttachment)
-            {
-                instance.StartCoroutine(instance.SendAttachmentToMultipleHooks(data, targets, attachment, Path.GetFileName(filename), mimeType));
-            }
-            else
-            {
-                instance.StartCoroutine(instance.SendToMultipleHooks(data, targets));
-            }
+            instance!.StartCoroutine(instance.SendToMultipleHooks(data!, targets!));
         }
         catch (Exception ex)
         {
             DiscordBotPlugin.LogWarning($"Rejected malformed webhook broker package: {ex.Message}");
+        }
+    }
+
+    private static void RPC_WebhookAttachmentStart(ZRpc rpc, ZPackage package)
+    {
+        if (!CanAcceptRemoteWebhookPackage(rpc, package, MaxRemoteControlPackageBytes)) return;
+        CleanupExpiredRemoteTransfers();
+
+        try
+        {
+            int protocolVersion = package.ReadInt();
+            string requestId = package.ReadString();
+            int webhookValue = package.ReadInt();
+            int routeValue = package.ReadInt();
+            string json = package.ReadString();
+            string mimeType = package.ReadString();
+            string filename = Path.GetFileName(package.ReadString());
+            int totalLength = package.ReadInt();
+            int chunkCount = package.ReadInt();
+
+            if (!IsValidRequestId(requestId) ||
+                totalLength <= 0 ||
+                totalLength > MaxRemoteAttachmentBytes ||
+                chunkCount <= 0 ||
+                chunkCount > MaxRemoteAttachmentChunks ||
+                chunkCount != (totalLength + RemoteAttachmentChunkBytes - 1) / RemoteAttachmentChunkBytes)
+            {
+                DiscordBotPlugin.LogWarning("Rejected malformed webhook attachment metadata");
+                return;
+            }
+
+            if (!TryValidateRemoteWebhookMetadata(
+                    protocolVersion,
+                    webhookValue,
+                    routeValue,
+                    json,
+                    rpc,
+                    consumeAttachmentLimit: true,
+                    out Webhook webhook,
+                    out WebhookRoute route,
+                    out DiscordWebhookData? data,
+                    out List<string>? targets))
+            {
+                return;
+            }
+
+            if (RemoteWebhookTransfers.ContainsKey(rpc))
+            {
+                SendRemoteTextFallback(data!, targets!, "Rejected concurrent webhook attachment transfer");
+                return;
+            }
+
+            if (RemoteWebhookTransfers.Count >= MaxConcurrentRemoteTransfers)
+            {
+                SendRemoteTextFallback(data!, targets!, "Webhook attachment capacity is full");
+                return;
+            }
+
+            if (!IsAllowedAttachmentMetadata(webhook, mimeType, filename))
+            {
+                DiscordBotPlugin.LogWarning("Rejected invalid webhook attachment metadata");
+                return;
+            }
+
+            RemoteWebhookTransfers[rpc] = new RemoteWebhookTransfer(
+                requestId,
+                webhook,
+                route,
+                data!,
+                targets!,
+                mimeType,
+                filename,
+                totalLength,
+                chunkCount);
+
+            DiscordBotPlugin.LogDebug(
+                $"Accepted webhook attachment transfer with {chunkCount} chunks and {totalLength} bytes");
+        }
+        catch (Exception ex)
+        {
+            DiscordBotPlugin.LogWarning($"Rejected malformed webhook attachment start package: {ex.Message}");
+        }
+    }
+
+    private static void RPC_WebhookAttachmentChunk(ZRpc rpc, ZPackage package)
+    {
+        if (!CanAcceptRemoteWebhookPackage(rpc, package, MaxRemoteChunkPackageBytes)) return;
+        CleanupExpiredRemoteTransfers();
+
+        try
+        {
+            int protocolVersion = package.ReadInt();
+            string requestId = package.ReadString();
+            int chunkIndex = package.ReadInt();
+            byte[] chunk = package.ReadByteArray();
+
+            if (protocolVersion != WebhookBrokerProtocolVersion ||
+                !RemoteWebhookTransfers.TryGetValue(rpc, out RemoteWebhookTransfer? transfer) ||
+                !string.Equals(transfer.RequestId, requestId, StringComparison.Ordinal) ||
+                chunkIndex < 0 ||
+                chunkIndex >= transfer.ReceivedChunks.Length)
+            {
+                return;
+            }
+
+            int offset = chunkIndex * RemoteAttachmentChunkBytes;
+            int expectedLength = Math.Min(RemoteAttachmentChunkBytes, transfer.Buffer.Length - offset);
+            if (chunk.Length != expectedLength)
+            {
+                AbortRemoteTransfer(rpc, "Rejected webhook attachment chunk with an invalid length");
+                return;
+            }
+
+            if (!transfer.ReceivedChunks[chunkIndex])
+            {
+                Buffer.BlockCopy(chunk, 0, transfer.Buffer, offset, chunk.Length);
+                transfer.ReceivedChunks[chunkIndex] = true;
+                transfer.ReceivedChunkCount++;
+                transfer.ReceivedBytes += chunk.Length;
+            }
+
+            transfer.LastActivity = Time.realtimeSinceStartup;
+        }
+        catch (Exception ex)
+        {
+            AbortRemoteTransfer(rpc, $"Rejected malformed webhook attachment chunk: {ex.Message}");
+        }
+    }
+
+    private static void RPC_WebhookAttachmentComplete(ZRpc rpc, ZPackage package)
+    {
+        if (!CanAcceptRemoteWebhookPackage(rpc, package, 1024)) return;
+        CleanupExpiredRemoteTransfers();
+
+        try
+        {
+            int protocolVersion = package.ReadInt();
+            string requestId = package.ReadString();
+
+            if (protocolVersion != WebhookBrokerProtocolVersion ||
+                !RemoteWebhookTransfers.TryGetValue(rpc, out RemoteWebhookTransfer? transfer) ||
+                !string.Equals(transfer.RequestId, requestId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            RemoteWebhookTransfers.Remove(rpc);
+            if (transfer.ReceivedChunkCount != transfer.ReceivedChunks.Length ||
+                transfer.ReceivedBytes != transfer.Buffer.Length ||
+                !IsAllowedAttachment(transfer.Webhook, transfer.MimeType, transfer.Filename, transfer.Buffer))
+            {
+                DiscordBotPlugin.LogWarning("Rejected incomplete or invalid webhook attachment transfer");
+                return;
+            }
+
+            instance!.StartCoroutine(
+                instance.SendAttachmentToMultipleHooks(
+                    transfer.Data,
+                    transfer.Targets,
+                    transfer.Buffer,
+                    transfer.Filename,
+                    transfer.MimeType));
+        }
+        catch (Exception ex)
+        {
+            AbortRemoteTransfer(rpc, $"Rejected malformed webhook attachment completion: {ex.Message}");
+        }
+    }
+
+    private static bool CanAcceptRemoteWebhookPackage(ZRpc rpc, ZPackage package, int maximumPackageBytes)
+    {
+        if (!(ZNet.instance?.IsServer() ?? false) || instance == null) return false;
+        if (package.Size() <= 0 || package.Size() > maximumPackageBytes)
+        {
+            DiscordBotPlugin.LogWarning("Rejected oversized webhook broker package");
+            return false;
+        }
+
+        if (!rpc.IsConnected() || !ZNet.instance.GetPeers().Any(peer => peer.m_rpc == rpc))
+        {
+            DiscordBotPlugin.LogWarning("Rejected webhook broker request from an unknown peer");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateRemoteWebhookMetadata(
+        int protocolVersion,
+        int webhookValue,
+        int routeValue,
+        string json,
+        ZRpc rpc,
+        bool consumeAttachmentLimit,
+        out Webhook webhook,
+        out WebhookRoute route,
+        out DiscordWebhookData? data,
+        out List<string>? targets)
+    {
+        webhook = default;
+        route = default;
+        data = null;
+        targets = null;
+
+        if (protocolVersion != WebhookBrokerProtocolVersion ||
+            !Enum.IsDefined(typeof(Webhook), webhookValue) ||
+            !Enum.IsDefined(typeof(WebhookRoute), routeValue) ||
+            string.IsNullOrWhiteSpace(json) ||
+            json.Length > MaxRemoteWebhookJsonCharacters)
+        {
+            DiscordBotPlugin.LogWarning("Rejected malformed webhook broker request");
+            return false;
+        }
+
+        webhook = (Webhook)webhookValue;
+        route = (WebhookRoute)routeValue;
+        if (!IsAllowedRoute(webhook, route))
+        {
+            DiscordBotPlugin.LogWarning("Rejected webhook broker request with an invalid route");
+            return false;
+        }
+
+        if (!TryConsumeRateLimit(RemoteWebhookRequestTimes, rpc, RemoteRequestWindowSeconds, MaxRemoteRequestsPerWindow))
+        {
+            DiscordBotPlugin.LogWarning("Rejected rate-limited webhook broker request");
+            return false;
+        }
+
+        if (consumeAttachmentLimit &&
+            !TryConsumeRateLimit(RemoteWebhookAttachmentTimes, rpc, RemoteAttachmentWindowSeconds, MaxRemoteAttachmentsPerWindow))
+        {
+            DiscordBotPlugin.LogWarning("Rejected rate-limited webhook attachment request");
+            return false;
+        }
+
+        try
+        {
+            data = JsonConvert.DeserializeObject<DiscordWebhookData>(json);
+        }
+        catch (JsonException ex)
+        {
+            DiscordBotPlugin.LogWarning($"Rejected malformed webhook broker JSON: {ex.Message}");
+            return false;
+        }
+
+        if (data == null)
+        {
+            DiscordBotPlugin.LogWarning("Rejected empty webhook broker payload");
+            return false;
+        }
+
+        if (!ValidateWebhookData(data, out string validationError))
+        {
+            DiscordBotPlugin.LogWarning($"Rejected webhook broker payload: {validationError}");
+            return false;
+        }
+
+
+        data.allowed_mentions = new AllowedMentions();
+        targets = DiscordBotPlugin.GetWebhookTargets(webhook, route);
+        if (targets.Count == 0)
+        {
+            DiscordBotPlugin.LogWarning($"No valid Discord webhook is configured for {webhook}/{route}");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsAllowedAttachmentMetadata(Webhook webhook, string mimeType, string filename)
+    {
+        if (webhook != Webhook.Chat && webhook != Webhook.DeathFeed) return false;
+        if (mimeType != "image/png" && mimeType != "image/gif") return false;
+
+        string cleanName = Path.GetFileName(filename ?? string.Empty);
+        if (cleanName.Length == 0 || cleanName.Length > 128) return false;
+
+        return mimeType == "image/png"
+            ? cleanName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+            : cleanName.EndsWith(".gif", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsValidRequestId(string requestId)
+    {
+        return requestId.Length == 32 && requestId.All(Uri.IsHexDigit);
+    }
+
+    private static void SendRemoteTextFallback(
+        DiscordWebhookData data,
+        List<string> targets,
+        string reason)
+    {
+        RemoveAttachmentReferences(data);
+        DiscordBotPlugin.LogWarning($"{reason}; sending a text-only fallback");
+        instance!.StartCoroutine(instance.SendToMultipleHooks(data, targets));
+    }
+
+    private static void AbortRemoteTransfer(ZRpc rpc, string reason)
+    {
+        RemoteWebhookTransfers.Remove(rpc);
+        DiscordBotPlugin.LogWarning(reason);
+    }
+
+    private static void CleanupExpiredRemoteTransfers()
+    {
+        if (RemoteWebhookTransfers.Count == 0) return;
+
+        float now = Time.realtimeSinceStartup;
+        foreach (ZRpc rpc in RemoteWebhookTransfers
+                     .Where(pair => !pair.Key.IsConnected() || now - pair.Value.LastActivity > RemoteTransferTimeoutSeconds)
+                     .Select(pair => pair.Key)
+                     .ToList())
+        {
+            RemoteWebhookTransfers.Remove(rpc);
+            DiscordBotPlugin.LogWarning("Discarded an expired webhook attachment transfer");
         }
     }
 
@@ -790,6 +1222,11 @@ public class Discord : MonoBehaviour
         public string? avatar_url;
         public AllowedMentions allowed_mentions = new();
 
+        [JsonConstructor]
+        public DiscordWebhookData()
+        {
+        }
+
         public DiscordWebhookData(string username, string content)
         {
             if (!string.IsNullOrEmpty(username)) this.username = Localization.instance.Localize(username);
@@ -870,6 +1307,11 @@ public class Discord : MonoBehaviour
         public int width;
         public int height;
 
+        [JsonConstructor]
+        public EmbedImage()
+        {
+        }
+
         public EmbedImage(string url, int width = 256, int height = 256)
         {
             this.url = url;
@@ -911,6 +1353,11 @@ public class Discord : MonoBehaviour
         public string? value;
         public bool inline;
 
+        [JsonConstructor]
+        public EmbedField()
+        {
+        }
+
         public EmbedField(string name, string value, bool inline = true)
         {
             this.name = Localization.instance.Localize(name);
@@ -925,6 +1372,11 @@ public class Discord : MonoBehaviour
     {
         public string? text;
         public string? icon_url;
+
+        [JsonConstructor]
+        public Footer()
+        {
+        }
 
         public Footer(string text)
         {
