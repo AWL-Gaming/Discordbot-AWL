@@ -26,7 +26,7 @@ public static class OnNewDay
                 }
                 else
                 {
-                    Discord.instance?.SendMessage(Webhook.Notifications, message: msg, hooks: DiscordBotPlugin.OnNewDayHooks);
+                    Discord.instance?.SendMessage(Webhook.Notifications, message: msg, hooks: DiscordBotPlugin.OnNewDayHooks, route: WebhookRoute.NewDay);
                     Discord.instance?.BroadcastMessage(ZNet.instance.GetWorldName(), msg, false);
                 }
             }

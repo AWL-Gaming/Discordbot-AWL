@@ -4,12 +4,14 @@ AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://githu
 
 Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/NOTICE.md).
 
-## AWL 1.4.0 highlights
+## AWL 1.4.1 highlights
 
 - Gemini model discovery through Google's model catalog, with configured models filtered against what the current API key can actually use.
 - OpenRouter account-aware model discovery, optional free-only filtering, and ordered model failover.
 - Provider failover across Gemini, OpenRouter, OpenAI, and DeepSeek.
 - Server-side AI broker for automatic death/day quips without synchronizing API keys to clients.
+- Server-side Discord webhook broker, so webhook URLs remain on the dedicated server and are never synchronized to clients.
+- Retired Gemini model filtering, including automatic removal of `gemini-2.5-flash` from the request plan.
 - Per-request timeout, attempt limits, credential-error short-circuiting, and client broker response timeout.
 - Death GIF and screenshot capture now restore the HUD if recording is interrupted or the component is disabled.
 - Reproducible release build and Thunderstore package validation scripts.
@@ -83,12 +85,19 @@ You'll need Discord Channel IDs for the bot to read messages:
 After first run, configuration files will be generated in `BepInEx/config/`. Edit the Discord Bot config file to set up your:
 
 - Channel IDs
-- Webhook URLs
+- Webhook URLs [SERVER ONLY]
 - Bot Token [SERVER ONLY]
+- AI API keys [SERVER ONLY when using the server broker]
 
 ## Configurations
 
-Find DiscordBot plugin configurations in `BepinEx/config/RustyMods.DiscordBot.cfg`
+Find DiscordBot plugin configurations in `BepinEx/config/RustyMods.DiscordBot.cfg`.
+
+Configure webhook URLs, the Discord bot token, and server AI API keys only in the dedicated server config. Version 1.4.1 no longer synchronizes webhook URLs or API keys to clients. Connected clients submit bounded webhook requests to the server broker, which resolves the destination locally.
+
+`Webhook URL` requires the complete Discord webhook URL. `Channel ID` requires only the numeric Discord channel ID. They are not interchangeable.
+
+Config file edits are watched and reloaded automatically after saving. No console command is required. Replacing `DiscordBot.dll` is not hot-reloadable and requires restarting the affected server or client process.
 
 Here's what your configuration might look like:
 
@@ -106,7 +115,7 @@ Log Errors = Off
 
 [2 - Notifications]
 
-## Set webhook to receive notifications, like server start, stop, save etc... [Synced with Server]
+## Set webhook to receive notifications, like server start, stop, save etc... [Server Only] [Not Synced with Server]
 Webhook URL = <your-discord-webhook-url>
 
 ## If on, bot will send message when server is starting [Synced with Server]
@@ -126,7 +135,7 @@ New Connection = Off
 
 [3 - Chat]
 
-## Set discord webhook to display chat messages [Synced with Server]
+## Set discord webhook to display chat messages [Server Only] [Not Synced with Server]
 Webhook URL = <your-discord-webhook-url>
 
 ## Set channel ID to monitor for messages [Synced with Server]
@@ -137,7 +146,7 @@ Enabled = On
 
 [4 - Commands]
 
-## Set discord webhook to display feedback messages from commands [Synced with Server]
+## Set discord webhook to display feedback messages from commands [Server Only] [Not Synced with Server]
 Webhook URL = <your-discord-webhook-url>
 
 ## Set channel ID to monitor for input commands [Synced with Server]
@@ -345,7 +354,7 @@ Provider Order = Gemini, OpenRouter, ChatGPT, DeepSeek
 
 Gemini =
 Gemini Model = Flash3_6
-Gemini Models = gemini-3.6-flash, gemini-3.5-flash-lite, gemini-3.5-flash, gemini-3.1-flash-lite, gemini-flash-latest, gemini-flash-lite-latest, gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-pro-latest, gemini-2.5-flash-lite, gemini-2.5-flash, gemini-2.5-pro
+Gemini Models = gemini-3.6-flash, gemini-3.5-flash-lite, gemini-3.5-flash, gemini-3.1-flash-lite, gemini-flash-latest, gemini-flash-lite-latest, gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-pro-latest, gemini-2.5-flash-lite, gemini-2.5-pro
 Gemini Auto Discover = On
 
 OpenRouter =
@@ -377,7 +386,7 @@ Death Quips = On
 Day Quips = On
 ```
 
-`Gemini Model` and `OpenRouter Model` are retained for backward compatibility and are treated as the first configured model. Auto-discovery then appends currently usable models. A retired or unavailable model no longer permanently breaks AI output because the request advances to the next model/provider.
+`Gemini Model` and `OpenRouter Model` are retained for backward compatibility. Known retired Gemini models are removed before the request plan is built, even when an older config still selects one as the legacy primary. Auto-discovery then appends currently usable models, and unavailable models fail over to the next model/provider.
 
 OpenAI API usage is separate from ChatGPT subscriptions. Configure an OpenAI API key with API billing if the OpenAI provider is used.
 

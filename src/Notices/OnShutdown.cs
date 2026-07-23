@@ -13,7 +13,7 @@ public static class OnShutdown
         private static void Prefix(ZNet __instance)
         {
             if (!DiscordBotPlugin.ShowServerStop || !__instance.IsServer()) return;
-            Discord.instance?.SendStatus(Webhook.Notifications, DiscordBotPlugin.OnWorldShutdownHooks, Keys.ServerStop, __instance.GetWorldName(), Keys.Offline, new Color(1f, 0.2f, 0f, 1f));
+            Discord.instance?.SendStatus(Webhook.Notifications, DiscordBotPlugin.OnWorldShutdownHooks, Keys.ServerStop, __instance.GetWorldName(), Keys.Offline, new Color(1f, 0.2f, 0f, 1f), route: WebhookRoute.WorldShutdown);
         }
     }
 }

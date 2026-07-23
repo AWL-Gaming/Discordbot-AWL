@@ -41,4 +41,4 @@ Thunderstore package versions are immutable. Changes to the icon, README, NOTICE
 8. Upload it under the same **AWLGaming** team and keep the package name `DiscordBot_AWL` unchanged.
 9. Review the rendered README, dependencies, package name, version, icon, and attribution before publishing.
 
-For an icon and notice-only update after `1.4.0`, publish `1.4.1`.
+Version `1.4.1` is a security release. It removes webhook URL synchronization to clients, adds the server-side webhook broker, filters the retired Gemini 2.5 Flash model, and includes the branded icon and updated documentation.

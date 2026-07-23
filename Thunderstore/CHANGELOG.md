@@ -1,3 +1,11 @@
+# 1.4.1
+
+- Removed Discord webhook URL synchronization to clients.
+- Added a server-side webhook broker with route validation, payload limits, attachment limits, mention suppression, and per-client rate limiting.
+- Removed webhook destinations and identifiers from success/error logs.
+- Filtered retired Gemini models, including `gemini-2.5-flash`, before building the request plan.
+- Added AWL Gaming branding to the Thunderstore package icon.
+- Clarified server-only secrets, config hot reload, and webhook URL versus channel ID configuration.
 # 1.4.0
 
 - Added Gemini and OpenRouter model discovery with ordered model failover.

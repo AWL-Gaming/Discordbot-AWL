@@ -13,7 +13,7 @@ public static class OnSave
         private static void Postfix(ZNet __instance)
         {
             if (!DiscordBotPlugin.ShowServerSave || !__instance.IsServer()) return;
-            Discord.instance?.SendStatus(Webhook.Notifications, DiscordBotPlugin.OnWorldSaveHooks, Keys.ServerSaving, __instance.GetWorldName(), Keys.Saving, new Color(0.4f, 0.98f, 0.24f));
+            Discord.instance?.SendStatus(Webhook.Notifications, DiscordBotPlugin.OnWorldSaveHooks, Keys.ServerSaving, __instance.GetWorldName(), Keys.Saving, new Color(0.4f, 0.98f, 0.24f), route: WebhookRoute.WorldSave);
         }
     }
 }

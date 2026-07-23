@@ -52,4 +52,4 @@ Copy-Item -LiteralPath "$profile\DiscordBot.dll" -Destination "$profile\DiscordB
 Copy-Item -LiteralPath '.\bin\Release\DiscordBot.dll' -Destination "$profile\DiscordBot.dll" -Force
 ```
 
-Start Valheim and verify `BepInEx\LogOutput.log` contains `Loading [DiscordBot 1.4.0]` and no `DiscordBot` exceptions.
+Start Valheim and verify `BepInEx\LogOutput.log` contains `Loading [DiscordBot 1.4.1]` and no `DiscordBot` exceptions.
