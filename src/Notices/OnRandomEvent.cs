@@ -29,7 +29,7 @@ public static class OnRandomEvent
             }
             details["Creatures"] = string.Join(", ", creatures);
 
-            Discord.instance?.SendEvent(Webhook.Notifications, DiscordBotPlugin.OnEventHooks, __instance.m_startMessage, Color.yellow, details);
+            Discord.instance?.SendEvent(Webhook.Notifications, DiscordBotPlugin.OnEventHooks, __instance.m_startMessage, Color.yellow, details, route: WebhookRoute.Event);
         }
     }
     
@@ -41,7 +41,7 @@ public static class OnRandomEvent
         {
             if (!DiscordBotPlugin.ShowEvent || !ZNet.instance.IsServer() || string.IsNullOrWhiteSpace(__instance.m_endMessage)) return;
             
-            Discord.instance?.SendEvent(Webhook.Notifications, DiscordBotPlugin.OnEventHooks, __instance.m_endMessage, Color.yellow);
+            Discord.instance?.SendEvent(Webhook.Notifications, DiscordBotPlugin.OnEventHooks, __instance.m_endMessage, Color.yellow, route: WebhookRoute.Event);
         }
     }
 }

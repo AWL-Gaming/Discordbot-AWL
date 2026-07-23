@@ -20,11 +20,11 @@ public static class OnLogout
                 var coordinates = $"{peer.m_refPos.x:0.0}, {peer.m_refPos.y:0.0}, {peer.m_refPos.z:0.0}";
                 var biome = WorldGenerator.instance.GetBiome(peer.m_refPos).ToString();
                 var details = new Dictionary<string, string>(){["Coordinates"] = coordinates, ["Biome"] = biome};
-                Discord.instance?.SendEvent(Webhook.Notifications, DiscordBotPlugin.OnLogoutHooks, msg, ColorExtensions.CoolGray, details);
+                Discord.instance?.SendEvent(Webhook.Notifications, DiscordBotPlugin.OnLogoutHooks, msg, ColorExtensions.CoolGray, details, route: WebhookRoute.Logout);
             }
             else
             {
-                Discord.instance?.SendMessage(Webhook.Notifications, message: msg, hooks: DiscordBotPlugin.OnLogoutHooks);
+                Discord.instance?.SendMessage(Webhook.Notifications, message: msg, hooks: DiscordBotPlugin.OnLogoutHooks, route: WebhookRoute.Logout);
             }
         }
     }
@@ -43,11 +43,11 @@ public static class OnLogout
     //             var coordinates = $"{Player.m_localPlayer.transform.position.x:0.0}, {Player.m_localPlayer.transform.position.y:0.0}, {Player.m_localPlayer.transform.position.z:0.0}";
     //             var biome = WorldGenerator.instance.GetBiome(Player.m_localPlayer.transform.position).ToString();
     //             var details = new Dictionary<string, string>(){["Coordinates"] = coordinates, ["Biome"] = biome};
-    //             Discord.instance?.SendEvent(Webhook.Notifications, DiscordBotPlugin.OnLogoutHooks, msg, ColorExtensions.CoolGray, details);
+    //             Discord.instance?.SendEvent(Webhook.Notifications, DiscordBotPlugin.OnLogoutHooks, msg, ColorExtensions.CoolGray, details, route: WebhookRoute.Logout);
     //         }
     //         else
     //         {
-    //             Discord.instance?.SendMessage(Webhook.Notifications, message: msg, hooks: DiscordBotPlugin.OnLogoutHooks);
+    //             Discord.instance?.SendMessage(Webhook.Notifications, message: msg, hooks: DiscordBotPlugin.OnLogoutHooks, route: WebhookRoute.Logout);
     //         }
     //     }
     // }

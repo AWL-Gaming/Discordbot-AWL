@@ -25,11 +25,11 @@ public static class OnLogin
                 var biome = WorldGenerator.instance.GetBiome(spawnPoint).ToString();
                 var details = new Dictionary<string, string>(){["Coordinates"] = coordinates, ["Biome"] = biome};
                 
-                Discord.instance?.SendEvent(Webhook.Notifications, DiscordBotPlugin.OnLoginHooks, msg, ColorExtensions.SoftBlue, details);
+                Discord.instance?.SendEvent(Webhook.Notifications, DiscordBotPlugin.OnLoginHooks, msg, ColorExtensions.SoftBlue, details, route: WebhookRoute.Login);
             }
             else
             {
-                Discord.instance?.SendMessage(Webhook.Notifications, message: msg, hooks: DiscordBotPlugin.OnLoginHooks);
+                Discord.instance?.SendMessage(Webhook.Notifications, message: msg, hooks: DiscordBotPlugin.OnLoginHooks, route: WebhookRoute.Login);
             }
         }
     }

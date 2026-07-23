@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
 using JetBrains.Annotations;
@@ -13,16 +13,16 @@ public static class OnBossKill
         [UsedImplicitly]
         private static void Prefix(Character __instance)
         {
-            if (!DiscordBotPlugin.ShowBossDeath || !__instance.IsBoss()) return;
+            if (!DiscordBotPlugin.ShowBossDeath || !(ZNet.instance?.IsServer() ?? false) || !__instance.IsBoss()) return;
             string killer = (__instance.m_lastHit?.GetAttacker() as Player)?.GetPlayerName() ?? "Unknown";
             List<Player> players = new();
             Player.GetPlayersInRange(__instance.transform.position, 50f, players);
-            Discord.instance?.SendTableEmbed(Webhook.Notifications, $"{__instance.m_name} {Keys.HasDied}", new ()
+            Discord.instance?.SendTableEmbed(Webhook.Notifications, $"{__instance.m_name} {Keys.HasDied}", new()
             {
                 ["Last Hit"] = killer,
                 ["Players"] = string.Join("\n", players.Select(x => $"`{x.GetPlayerName()}`"))
-            }, thumbnail: Links.GetCreatureIcon(__instance.name), 
-                hooks: DiscordBotPlugin.OnBossDeathHooks);
+            }, thumbnail: Links.GetCreatureIcon(__instance.name),
+                hooks: DiscordBotPlugin.OnBossDeathHooks, route: WebhookRoute.Boss);
         }
     }
 }

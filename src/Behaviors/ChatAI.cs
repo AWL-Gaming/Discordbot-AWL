@@ -208,7 +208,7 @@ public class ChatAI : MonoBehaviour
 
     public void HandleDayQuip(string message)
     {
-        Discord.instance?.SendMessage(Webhook.Notifications, message: message, hooks: DiscordBotPlugin.OnNewDayHooks);
+        Discord.instance?.SendMessage(Webhook.Notifications, message: message, hooks: DiscordBotPlugin.OnNewDayHooks, route: WebhookRoute.NewDay);
         Discord.instance?.BroadcastMessage(ZNet.instance.GetWorldName(), message, false);
     }
 

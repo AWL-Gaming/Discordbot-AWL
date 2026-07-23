@@ -21,11 +21,11 @@ public static class OnCommand
                     ["Biome"] = Player.m_localPlayer.GetCurrentBiome().ToString(),
                 };
                 
-                Discord.instance?.SendTableEmbed(Webhook.Notifications, $"Executed command: `{string.Join(" ", args.Args)}`", details, Player.m_localPlayer.GetPlayerName(), hooks: DiscordBotPlugin.OnUseCommandHooks);
+                Discord.instance?.SendTableEmbed(Webhook.Notifications, $"Executed command: `{string.Join(" ", args.Args)}`", details, Player.m_localPlayer.GetPlayerName(), hooks: DiscordBotPlugin.OnUseCommandHooks, route: WebhookRoute.UseCommand);
             }
             else
             {
-                Discord.instance?.SendMessage(Webhook.Notifications, ZNet.instance.GetWorldName(), $"Executed command: `{string.Join(" ", args.Args)}`", DiscordBotPlugin.OnUseCommandHooks);
+                Discord.instance?.SendMessage(Webhook.Notifications, ZNet.instance.GetWorldName(), $"Executed command: `{string.Join(" ", args.Args)}`", DiscordBotPlugin.OnUseCommandHooks, WebhookRoute.UseCommand);
             }
         }
     }
