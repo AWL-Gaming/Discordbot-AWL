@@ -4,18 +4,15 @@ AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://githu
 
 Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](NOTICE.md).
 
-## AWL 1.4.2 highlights
+## AWL 1.4.3 highlights
 
-- Gemini model discovery through Google's model catalog, with configured models filtered against what the current API key can actually use.
-- OpenRouter account-aware model discovery, optional free-only filtering, and ordered model failover.
-- Provider failover across Gemini, OpenRouter, OpenAI, and DeepSeek.
-- Server-side AI broker for automatic death/day quips without synchronizing API keys to clients.
-- Server-side Discord webhook broker, so webhook URLs remain on the dedicated server and are never synchronized to clients.
-- Retired Gemini model filtering, including automatic removal of `gemini-2.5-flash` from the request plan.
-- Per-request timeout, attempt limits, credential-error short-circuiting, and client broker response timeout.
-- Death GIF and screenshot capture now restore the HUD if recording is interrupted or the component is disabled.
-- Reproducible release build and Thunderstore package validation scripts.
-
+- Prevented incomplete AI fragments from reaching Discord by requiring natural completion and passing a strict final quality gate.
+- Added low-thinking Gemini quip generation so short death and day messages spend their token budget on visible output instead of internal reasoning.
+- Added exact `{PLAYER}` and `{DAY}` token substitution, preserving the real player name and day number without trusting the model to reproduce them.
+- Added bounded quality checks for length, sentence count, punctuation, markdown, planning text, required context, and Valheim/Norse flavor.
+- Added trusted local-quips as a guaranteed fallback whenever every AI candidate fails, times out, is truncated, or is rejected.
+- Added optional multi-provider quip comparison. When enabled, one approved candidate is collected from multiple providers and the highest-scoring result is selected.
+- Preserved automatic provider/model failover, server-side secret brokering, and existing webhook/capture behavior.
 ## Prerequisites
 
 - **BepInEx** installed

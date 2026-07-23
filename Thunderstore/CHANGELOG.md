@@ -1,3 +1,12 @@
+# 1.4.3
+
+- Prevented truncated, malformed, generic, markdown-wrapped, or planning-style AI fragments from being sent to Discord.
+- Added natural finish-reason enforcement and a final quality gate before any AI quip is accepted.
+- Added minimal-thinking Gemini generation for death and day quips, preserving output tokens for the actual message.
+- Added exact server-controlled player-name and day-number substitution through `{PLAYER}` and `{DAY}` tokens.
+- Added contextual source-quips to the server AI broker while preserving server-side death verification and secret isolation.
+- Added automatic fallback to the trusted local quip when AI generation fails validation, times out, or exhausts providers.
+- Added optional multi-provider candidate comparison with bounded provider count and deterministic quality scoring.
 # 1.4.2
 
 - Fixed client disconnects after death by replacing oversized single-packet GIF/PNG broker uploads with bounded 24 KiB chunks.

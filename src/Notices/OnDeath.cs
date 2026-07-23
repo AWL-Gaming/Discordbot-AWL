@@ -1,4 +1,4 @@
-﻿using HarmonyLib;
+using HarmonyLib;
 using JetBrains.Annotations;
 
 namespace DiscordBot.Notices;
@@ -13,51 +13,59 @@ public static class OnDeath
         {
             if (!DiscordBotPlugin.ShowOnDeath || __instance != Player.m_localPlayer || __instance.m_nview.GetZDO() == null) return;
 
+            string playerName = __instance.GetPlayerName();
             string avatar = "";
             string quip = "";
+
             if (__instance.m_lastHit is { } hit)
             {
                 if (hit.GetAttacker() is { } killer)
                 {
                     avatar = Links.GetCreatureIcon(killer.name);
-                    quip = DeathQuips.GenerateDeathQuip(__instance.GetPlayerName(), killer.m_name, killer.m_level, killer.IsBoss());
+                    quip = DeathQuips.GenerateDeathQuip(playerName, killer.m_name, killer.m_level, killer.IsBoss());
                 }
                 else
                 {
-                    quip = DeathQuips.GenerateEnvironmentalQuip(__instance.GetPlayerName(), hit.m_hitType);
+                    quip = DeathQuips.GenerateEnvironmentalQuip(playerName, hit.m_hitType);
                 }
             }
 
-            bool isGeneratingQuip = false;
-            if (DiscordBotPlugin.ImproveDeathQuips && ChatAI.HasKey())
+            if (string.IsNullOrWhiteSpace(quip))
             {
-                var prompt =
-                    "You are a witty, sarcastic Viking spirit in Valheim" +
-                    "A player has just died, and the original quip is: " + quip +
-                    ". Reimagine this quip to make it fresh, humorous and entertaining, keep it 1-2 sentences.";
-                ChatAI.instance?.Ask(prompt, true);
-                isGeneratingQuip = true;
+                quip = DeathQuips.GenerateEnvironmentalQuip(playerName, HitData.HitType.Undefined);
             }
-            
-            if (DiscordBotPlugin.ScreenshotGif) Recorder.instance?.StartRecording($"{__instance.GetPlayerName()} {Keys.HasDied}", quip, avatar);
-            else if (DiscordBotPlugin.ScreenshotDeath) Screenshot.instance?.StartCapture($"{__instance.GetPlayerName()} {Keys.HasDied}", quip, avatar);
+
+            ChatAI? chatAI = ChatAI.instance;
+            bool isGeneratingQuip = DiscordBotPlugin.ImproveDeathQuips && ChatAI.HasKey() && chatAI != null;
+            string title = $"{playerName} {Keys.HasDied}";
+
+            if (DiscordBotPlugin.ScreenshotGif)
+            {
+                Recorder.instance?.StartRecording(title, quip, avatar);
+            }
+            else if (DiscordBotPlugin.ScreenshotDeath)
+            {
+                Screenshot.instance?.StartCapture(title, quip, avatar);
+            }
+            else if (isGeneratingQuip)
+            {
+                chatAI!.OnDeathQuip = message =>
+                {
+                    Discord.instance?.SendEmbedMessage(Webhook.DeathFeed, title, message, thumbnail: avatar);
+                    string worldName = ZNet.instance?.GetWorldName() ?? "Server";
+                    Discord.instance?.Internal_BroadcastMessage(worldName, message, false);
+                };
+            }
             else
             {
-                if (isGeneratingQuip && ChatAI.instance)
-                {
-                    ChatAI.instance.OnDeathQuip = msg =>
-                    {
-                        Discord.instance?.SendEmbedMessage(Webhook.DeathFeed, $"{__instance.GetPlayerName()} {Keys.HasDied}", msg, thumbnail: avatar);
-                        var worldName = ZNet.instance?.GetWorldName() ?? "Server";
-                        Discord.instance?.Internal_BroadcastMessage(worldName, msg, false);
-                    };
-                }
-                else
-                {
-                    Discord.instance?.SendEmbedMessage(Webhook.DeathFeed, $"{__instance.GetPlayerName()} {Keys.HasDied}", quip, thumbnail: avatar);
-                    var worldName = ZNet.instance?.GetWorldName() ?? "Server";
-                    Discord.instance?.Internal_BroadcastMessage(worldName, quip, false);
-                }
+                Discord.instance?.SendEmbedMessage(Webhook.DeathFeed, title, quip, thumbnail: avatar);
+                string worldName = ZNet.instance?.GetWorldName() ?? "Server";
+                Discord.instance?.Internal_BroadcastMessage(worldName, quip, false);
+            }
+
+            if (isGeneratingQuip)
+            {
+                chatAI!.AskDeathQuip(playerName, quip);
             }
         }
     }
