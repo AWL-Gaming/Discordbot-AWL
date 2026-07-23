@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Reflection;
@@ -35,13 +35,13 @@ public static class API
         switch (channel.ToLower())
         {
             case "notifications":
-                Discord.instance?.SendMessage(Webhook.Notifications, message: message);
+                Discord.instance?.SendMessage(Webhook.Notifications, message: message, route: WebhookRoute.PublicApi);
                 break;
             case "chat":
-                Discord.instance?.SendMessage(Webhook.Chat, message: message);
+                Discord.instance?.SendMessage(Webhook.Chat, message: message, route: WebhookRoute.PublicApi);
                 break;
             case "commands":
-                Discord.instance?.SendMessage(Webhook.Commands, message: message);
+                Discord.instance?.SendMessage(Webhook.Commands, message: message, route: WebhookRoute.PublicApi);
                 break;
         }
     }
@@ -51,19 +51,19 @@ public static class API
         switch (channel.ToLower())
         {
             case "notifications":
-                Discord.instance?.SendTableEmbed(Webhook.Notifications, title, tableData);
+                Discord.instance?.SendTableEmbed(Webhook.Notifications, title, tableData, route: WebhookRoute.PublicApi);
                 break;
             case "chat":
-                Discord.instance?.SendTableEmbed(Webhook.Chat, title, tableData);
+                Discord.instance?.SendTableEmbed(Webhook.Chat, title, tableData, route: WebhookRoute.PublicApi);
                 break;
             case "commands":
-                Discord.instance?.SendTableEmbed(Webhook.Commands, title, tableData);
+                Discord.instance?.SendTableEmbed(Webhook.Commands, title, tableData, route: WebhookRoute.PublicApi);
                 break;
         }
     }
-    public static void SendNotification(string message) => Discord.instance?.SendMessage(Webhook.Notifications, message);
-    public static void SendChat(string message) => Discord.instance?.SendMessage(Webhook.Chat, message);
-    public static void SendCommandMessage(string message) => Discord.instance?.SendMessage(Webhook.Commands, message);
+    public static void SendNotification(string message) => Discord.instance?.SendMessage(Webhook.Notifications, message, route: WebhookRoute.PublicApi);
+    public static void SendChat(string message) => Discord.instance?.SendMessage(Webhook.Chat, message, route: WebhookRoute.PublicApi);
+    public static void SendCommandMessage(string message) => Discord.instance?.SendMessage(Webhook.Commands, message, route: WebhookRoute.PublicApi);
 }
 
 // Use this
@@ -88,9 +88,9 @@ public static class DiscordBot_API
     public enum Channel { Notifications, Chat, Commands, }
 
     public static void SendWebhookMessage(Channel channel, string message) => _SendWebhookMessage?.Invoke(channel.ToString(), message);
-    
+
     public static void SendWebhookTable(Channel channel, string title, Dictionary<string, string> tableData) => _SendWebhookTable?.Invoke(channel.ToString(), title, tableData);
-    
+
     /// <param name="command">commands saved into a dictionary, must be unique, example: !mycommand</param>
     /// <param name="description">description of command sent to discord when using !help</param>
     /// <param name="action">delegate invoked to run command</param>
@@ -98,13 +98,13 @@ public static class DiscordBot_API
     /// <param name="adminOnly">if true, only discord username registered to config file are allowed to run command</param>
     /// <param name="isSecret">if true, command description is not sent to discord when command !help is called</param>
     /// <param name="emoji">name of emoji to be displayed when description is sent to discord</param>
-    public static void RegisterCommand(string command, string description, 
-        Action<string[]> action, Action<ZPackage>? reaction = null, 
+    public static void RegisterCommand(string command, string description,
+        Action<string[]> action, Action<ZPackage>? reaction = null,
         bool adminOnly = false, bool isSecret = false, string emoji = "")
     {
         _RegisterCommand?.Invoke(command, description, action, reaction, adminOnly, isSecret, emoji);
     }
-    
+
     // Example:
     // RegisterCommand("!damage", "damages player, `player name` `amount`", args => 
     // {
@@ -130,16 +130,16 @@ public static class DiscordBot_API
     // adminOnly:true, 
     // isSecret:false,
     // emoji:"fries");
-    
+
     /// <summary>
     /// List of emoji's discord plugin recognizes, send key as value
     /// </summary>
-    private static readonly Dictionary<string, string> Emojis = new ()
+    private static readonly Dictionary<string, string> Emojis = new()
     {
         { "smile", "😊" }, { "grin", "😁" }, { "laugh", "😂" }, { "wink", "😉" },
         { "wave", "👋" }, { "clap", "👏" }, { "thumbsup", "👍" }, { "thumbsdown", "👎" },
         { "ok", "👌" }, { "pray", "🙏" }, { "muscle", "💪" }, { "facepalm", "🤦" },
-        
+
         { "dog", "🐶" }, { "cat", "🐱" }, { "mouse", "🐭" }, { "fox", "🦊" },
         { "bear", "🐻" }, { "panda", "🐼" }, { "koala", "🐨" }, { "lion", "🦁" },
         { "tiger", "🐯" }, { "monkey", "🐵" }, { "unicorn", "🦄" }, { "dragon", "🐉" },
@@ -165,11 +165,11 @@ public static class DiscordBot_API
         { "check", "✅" }, { "x", "❌" }, { "warning", "⚠️" }, { "question", "❓" },
         { "exclamation", "❗" }, { "infinity", "♾️" }, { "heart", "❤️" },
         { "brokenheart", "💔" }, { "sparkle", "✨" }, { "starstruck", "🤩" },
-        
+
         { "plus", "✚" }, { "minus", "━" }, { "tornado", "🌪️" }, { "storm", "⛈️" },
-        { "save", "💾" }, { "stop", "🔴" } 
+        { "save", "💾" }, { "stop", "🔴" }
     };
-    
+
     internal class Method
     {
         private const string Namespace = "DiscordBot";
@@ -178,7 +178,7 @@ public static class DiscordBot_API
         private const string API_LOCATION = Namespace + "." + ClassName + ", " + Assembly;
         private static readonly Dictionary<string, Type> CachedTypes = new();
         private readonly MethodInfo? info;
-        
+
         public object?[] Invoke(params object?[] args)
         {
             object? result = info?.Invoke(null, args);
@@ -246,10 +246,10 @@ public static class DiscordBot_API
         public Method(string methodName, params Type[] types) : this(API_LOCATION, methodName, types)
         {
         }
-        
+
         [PublicAPI]
         public ParameterInfo[] GetParameters() => info?.GetParameters() ?? Array.Empty<ParameterInfo>();
-        
+
         [PublicAPI]
         public static void ClearCache() => CachedTypes.Clear();
     }

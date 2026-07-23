@@ -571,6 +571,11 @@ public class Discord : MonoBehaviour
 
     private static bool IsAllowedRoute(Webhook webhook, WebhookRoute route)
     {
+        if (route == WebhookRoute.PublicApi)
+        {
+            return webhook is Webhook.Notifications or Webhook.Chat or Webhook.Commands;
+        }
+
         return webhook switch
         {
             Webhook.Chat => route == WebhookRoute.Default,

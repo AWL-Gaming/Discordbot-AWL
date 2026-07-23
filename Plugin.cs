@@ -59,7 +59,8 @@ public enum WebhookRoute
     Event,
     NewDay,
     UseCommand,
-    Boss
+    Boss,
+    PublicApi
 }
 
 public enum Channel { Chat, Commands }

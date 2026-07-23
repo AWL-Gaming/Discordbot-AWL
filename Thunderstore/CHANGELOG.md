@@ -2,6 +2,7 @@
 
 - Removed Discord webhook URL synchronization to clients.
 - Added a server-side webhook broker with route validation, payload limits, attachment limits, mention suppression, and per-client rate limiting.
+- Preserved the public notification/chat/command webhook API through an explicit broker-approved route.
 - Removed webhook destinations and identifiers from success/error logs.
 - Filtered retired Gemini models, including `gemini-2.5-flash`, before building the request plan.
 - Added AWL Gaming branding to the Thunderstore package icon.
