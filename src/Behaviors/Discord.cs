@@ -133,6 +133,8 @@ public class Discord : MonoBehaviour
             m_remoteAttachmentUpload = null;
         }
 
+        RemoteWebhookRequestTimes.Clear();
+        RemoteWebhookAttachmentTimes.Clear();
         RemoteWebhookTransfers.Clear();
         instance = null;
     }
