@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.Collections;
-using System.Threading.Tasks;
 using HarmonyLib;
 using uGIF;
 using UnityEngine;
@@ -16,6 +15,7 @@ public class Screenshot : MonoBehaviour
 
     private Texture2D recordedFrame = null!;
     private bool isCapturing;
+    private Coroutine? captureCoroutine;
 
     [Header("Discord message")]
     private string playerName = string.Empty;
@@ -23,12 +23,11 @@ public class Screenshot : MonoBehaviour
     private string thumbnail = string.Empty;
 
     private GameObject? m_chatWindow;
-    
+
     public void Awake()
     {
         instance = this;
         recordedFrame = new Texture2D(width, height, TextureFormat.RGB24, false);
-        
         DiscordBotPlugin.LogDebug("Initializing screenshotter");
     }
 
@@ -43,56 +42,71 @@ public class Screenshot : MonoBehaviour
         if (Input.GetKey(DiscordBotPlugin.SelfieKey) && !isCapturing) StartSelfie();
     }
 
+    public void OnDisable()
+    {
+        if (captureCoroutine != null)
+        {
+            StopCoroutine(captureCoroutine);
+            captureCoroutine = null;
+        }
+
+        isCapturing = false;
+        ShowHud();
+    }
+
     public void OnDestroy()
     {
+        OnDisable();
+        if (recordedFrame != null) Destroy(recordedFrame);
         instance = null;
     }
 
     private IEnumerator DelayedCaptureFrame()
     {
+        Texture2D? frame = null;
         HideHud();
-        yield return new WaitForSeconds(DiscordBotPlugin.ScreenshotDelay);
-        yield return new WaitForEndOfFrame();
-        Texture2D? frame = ScreenCapture.CaptureScreenshotAsTexture();
-
-        ShowHud();
 
         try
         {
-            Image img = new(frame);
-            img.ResizeBilinear(width, height);
-            recordedFrame.Reinitialize(width, height);
-            recordedFrame.SetPixels32(img.pixels);
-            recordedFrame.Apply();
+            yield return new WaitForSeconds(DiscordBotPlugin.ScreenshotDelay);
+            yield return new WaitForEndOfFrame();
+            frame = ScreenCapture.CaptureScreenshotAsTexture();
 
+            if (frame == null)
+            {
+                DiscordBotPlugin.LogWarning("Failed to capture screenshot frame");
+                yield break;
+            }
+
+            if (!CopyFrame(frame)) yield break;
+
+            byte[]? bytes = recordedFrame.EncodeToPNG();
+            if (bytes is null || bytes.Length == 0)
+            {
+                DiscordBotPlugin.LogWarning("Failed to encode recorded frame");
+                yield break;
+            }
+
+            SendToDiscord(bytes);
         }
-        catch (Exception ex)
+        finally
         {
-            DiscordBotPlugin.LogWarning($"Failed to resize recorded frame: {ex.Message}");
+            if (frame != null) Destroy(frame);
+            captureCoroutine = null;
             isCapturing = false;
-            yield break;
+            ShowHud();
         }
-        
-        byte[]? bytes = recordedFrame.EncodeToPNG();
-        if (bytes is null || bytes.Length == 0)
-        {
-            DiscordBotPlugin.LogWarning("Failed to encode recorded frame");
-            isCapturing = false;
-            yield break;
-        }
-        
-        SendToDiscord(bytes);
-        isCapturing = false;
     }
-    
+
     public void StartCapture(string player, string quip, string avatar)
     {
         if (isCapturing) return;
+
         playerName = player;
         message = quip;
         thumbnail = avatar;
         isCapturing = true;
-        StartCoroutine(DelayedCaptureFrame());
+        captureCoroutine = StartCoroutine(DelayedCaptureFrame());
         DiscordBotPlugin.LogDebug("Starting death screenshot");
     }
 
@@ -118,7 +132,6 @@ public class Screenshot : MonoBehaviour
             Hud.instance.m_userHidden = false;
             Hud.instance.m_hudPressed = 0.0f;
             m_chatWindow?.SetActive(true);
-            
             Console.instance?.gameObject.SetActive(true);
         }
         catch
@@ -129,53 +142,75 @@ public class Screenshot : MonoBehaviour
 
     private IEnumerator DelayedSelfie()
     {
+        Texture2D? frame = null;
         HideHud();
-        yield return new WaitForSeconds(DiscordBotPlugin.ScreenshotDelay);
-        yield return new WaitForEndOfFrame();
-        Texture2D? frame = ScreenCapture.CaptureScreenshotAsTexture();
-
-        ShowHud();
 
         try
         {
-            Image img = new(frame);
-            img.ResizeBilinear(width, height);
+            yield return new WaitForSeconds(DiscordBotPlugin.ScreenshotDelay);
+            yield return new WaitForEndOfFrame();
+            frame = ScreenCapture.CaptureScreenshotAsTexture();
+
+            if (frame == null)
+            {
+                DiscordBotPlugin.LogWarning("Failed to capture screenshot frame");
+                yield break;
+            }
+
+            if (!CopyFrame(frame)) yield break;
+
+            byte[]? bytes = recordedFrame.EncodeToPNG();
+            if (bytes is null || bytes.Length == 0)
+            {
+                DiscordBotPlugin.LogWarning("Failed to encode recorded frame");
+                yield break;
+            }
+
+            SendSelfieToDiscord(bytes);
+        }
+        finally
+        {
+            if (frame != null) Destroy(frame);
+            captureCoroutine = null;
+            isCapturing = false;
+            ShowHud();
+        }
+    }
+
+    private bool CopyFrame(Texture2D frame)
+    {
+        try
+        {
+            Image image = new(frame);
+            image.ResizeBilinear(width, height);
             recordedFrame.Reinitialize(width, height);
-            recordedFrame.SetPixels32(img.pixels);
+            recordedFrame.SetPixels32(image.pixels);
             recordedFrame.Apply();
+            return true;
         }
         catch (Exception ex)
         {
             DiscordBotPlugin.LogWarning($"Failed to resize recorded frame: {ex.Message}");
-            isCapturing = false;
-            yield break;
+            return false;
         }
-        
-        byte[] bytes = recordedFrame.EncodeToPNG();
-        if (bytes is null || bytes.Length == 0)
-        {
-            DiscordBotPlugin.LogWarning("Failed to encode recorded frame");
-            isCapturing = false;
-            yield break;
-        }
-        
-        SendSelfieToDiscord(bytes);
-        isCapturing = false;
     }
 
     public void StartSelfie()
     {
+        if (isCapturing) return;
+
         isCapturing = true;
-        StartCoroutine(DelayedSelfie());
+        captureCoroutine = StartCoroutine(DelayedSelfie());
         DiscordBotPlugin.LogDebug("Starting selfie capture");
     }
-        
+
     public void SendToDiscord(byte[] data)
     {
         Discord.instance?.SendImageMessage(Webhook.DeathFeed, playerName, message, data, $"{DateTime.UtcNow:yyyyMMdd_HHmmss}.png", thumbnail: thumbnail);
-        var worldName = ZNet.instance?.GetWorldName() ?? "Server";
+        string worldName = ZNet.instance?.GetWorldName() ?? "Server";
         Discord.instance?.Internal_BroadcastMessage(worldName, message, false);
     }
+
     public void SendSelfieToDiscord(byte[] bytes)
     {
         Discord.instance?.SendImageMessage(Webhook.Chat, Player.m_localPlayer.GetPlayerName(), "Selfie!", bytes, $"{DateTime.UtcNow:yyyyMMdd_HHmmss}.png");

@@ -1,3 +1,17 @@
+# 1.4.0
+
+- Added Gemini and OpenRouter model discovery with ordered model failover.
+- Added ordered provider failover across Gemini, OpenRouter, OpenAI, and DeepSeek.
+- Added a per-provider model cap so one failing provider cannot consume the entire failover budget.
+- Updated direct OpenAI defaults to the GPT-5.6 Luna, Terra, and Sol family with older fallbacks.
+- Added current Gemini model defaults, including Gemini 3.6 Flash and Gemini 3.5 variants.
+- Added OpenRouter account-aware discovery and optional free-only filtering.
+- Added a server-side AI broker that does not synchronize API keys to clients.
+- Added request limits, credential-error short-circuiting, and remote-response timeout handling.
+- Fixed death GIF and screenshot cleanup so interrupted capture restores the HUD.
+- Added reproducible build and Thunderstore package validation scripts.
+- Added explicit original-author attribution and redistribution notice.
+
 # 1.3.0
 - fixed in-game broadcast only being sent to server
 

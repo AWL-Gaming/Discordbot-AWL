@@ -1,15 +1,18 @@
-# Discord Bot Plugin for Valheim
+# DiscordBot AWL for Valheim
 
-Enables two-way communication between your Valheim server and Discord channels.
+AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://github.com/RustyMods/DiscordBot). It preserves the existing two-way Valheim and Discord integration while adding resilient AI model discovery, ordered provider/model failover, and safer client capture cleanup.
 
-## Features
+Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](NOTICE.md).
 
-- 🗨️ **Chat Integration**: Send messages between Discord and in-game chat
-- 🤖 **Discord Commands**: Execute server commands from Discord
-- 📢 **Server Notifications**: Get notified when the server starts up
-- 💻 **Death GIF / Screenshot**: On player death, send gif or image of event along side a death quip
-- ✨ **Screenshot** to Discord chat command / hotkey
-- 📱 **ChatAI**: Prompt AI service and improve death quips
+## AWL 1.4.0 highlights
+
+- Gemini model discovery through Google's model catalog, with configured models filtered against what the current API key can actually use.
+- OpenRouter account-aware model discovery, optional free-only filtering, and ordered model failover.
+- Provider failover across Gemini, OpenRouter, OpenAI, and DeepSeek.
+- Server-side AI broker for automatic death/day quips without synchronizing API keys to clients.
+- Per-request timeout, attempt limits, credential-error short-circuiting, and client broker response timeout.
+- Death GIF and screenshot capture now restore the HUD if recording is interrupted or the component is disabled.
+- Reproducible release build and Thunderstore package validation scripts.
 
 ## Prerequisites
 
@@ -104,7 +107,7 @@ Log Errors = Off
 [2 - Notifications]
 
 ## Set webhook to receive notifications, like server start, stop, save etc... [Synced with Server]
-Webhook URL = https://discord.com/api/webhooks/1405043541192741007/X-WuWkr_0ApZ4JHq7_TOeMHfRCErXgUZkVnE_oh_yfy2mWKRShHK-wDzdasdWWDzdjk
+Webhook URL = <your-discord-webhook-url>
 
 ## If on, bot will send message when server is starting [Synced with Server]
 Startup = Off
@@ -124,7 +127,7 @@ New Connection = Off
 [3 - Chat]
 
 ## Set discord webhook to display chat messages [Synced with Server]
-Webhook URL = https://discord.com/api/webhooks/1404119063046652035/OqBFopk29Cku3_4TiLCJVwaagkyLVsdlkjasd239-sdjzdHH7vHh_RfWy1d3
+Webhook URL = <your-discord-webhook-url>
 
 ## Set channel ID to monitor for messages [Synced with Server]
 Channel ID = 9839768234583209
@@ -135,7 +138,7 @@ Enabled = On
 [4 - Commands]
 
 ## Set discord webhook to display feedback messages from commands [Synced with Server]
-Webhook URL = https://discord.com/api/webhooks/1404941903144685779/gc8DFwfIO5eUnxzoJ1Dqsi-iX68GLUMWz_3sdlkjasd9DDAS7tKfB1qWuYN
+Webhook URL = <your-discord-webhook-url>
 
 ## Set channel ID to monitor for input commands [Synced with Server]
 Channel ID = 1106947857194165898
@@ -327,61 +330,56 @@ Send commands in your designated command channel:
 
 ### ChatAI
 
-#### 🤖 AI Chat Integration
-The plugin supports multiple AI providers for enhanced chat interactions and death quips.
-Each client configures their own API keys, ensuring token usage and costs remain separate.
+ChatAI supports Gemini, OpenRouter, OpenAI, and DeepSeek. Requests are attempted in configured provider order, with `Models Per Provider` limiting each provider before moving to the next one. Authentication, quota, and rate-limit failures immediately fail over to the next provider.
 
-#### 🔑 Keys
-- Client-Managed Keys: Each user provides their own API keys
-- Enhanced Death Quips: AI-generated unique death messages when API keys are configured
+API keys remain local to the machine that owns them. With `Use Server Keys = On` and `Server AI Broker = On`, clients without local keys can request automatic death/day quips from the server. The server returns only the generated text and provider/model metadata. It never synchronizes bearer credentials to clients.
 
-Multiple Providers: Choose from 4 different AI services
+Manual player prompts through the server broker remain disabled by default. Enable `Allow Player AI Prompts` only when you intentionally want that behavior.
 
-#### 💡 Provider Recommendations & Notes
-Free Tier Options:
-- Gemini - Offers limited free usage through Google AI Studio, making it the best choice for cost-free experimentation
-- OpenRouter - Provides access to several free models from various providers
+Relevant settings:
 
-Paid Services:
-- ChatGPT - Requires paid OpenAI API credits (no free tier available)
-- DeepSeek - While competitively priced, requires API credit purchase
-
-Haven't fully tested longevity of this feature, but can be a fun gimmick for a little while
-```
+```ini
 [8 - AI]
-
-## Set which Artificial Intelligence API to use [Not Synced with Server]
-# Setting type: AIService
-# Default value: Gemini
-# Acceptable values: ChatGPT, Gemini, DeepSeek, OpenRouter
 Provider = Gemini
+Provider Order = Gemini, OpenRouter, ChatGPT, DeepSeek
 
-## Set ChatGPT key [Not Synced with Server]
-# Setting type: String
-# Default value:
+Gemini =
+Gemini Model = Flash3_6
+Gemini Models = gemini-3.6-flash, gemini-3.5-flash-lite, gemini-3.5-flash, gemini-3.1-flash-lite, gemini-flash-latest, gemini-flash-lite-latest, gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-pro-latest, gemini-2.5-flash-lite, gemini-2.5-flash, gemini-2.5-pro
+Gemini Auto Discover = On
+
+OpenRouter =
+OpenRouter Model = AutoFree
+OpenRouter Models = openrouter/free
+OpenRouter Auto Discover = On
+OpenRouter Free Only = On
+
 ChatGPT =
+OpenAI Models = gpt-5.6-luna, gpt-5.6-terra, gpt-5.6-sol, gpt-5.6, gpt-5.5, gpt-5.4-mini, gpt-5.4-nano, gpt-4.1-mini
 
-## Set Gemini key [Not Synced with Server]
-# Setting type: String
-# Default value:
-Gemini = 
+DeepSeek =
+DeepSeek Models = deepseek-chat, deepseek-reasoner
 
-## Set DeepSeek key [Not Synced with Server]
-# Setting type: String
-# Default value:
-DeepSeek = 
+Max Attempts = 12
+Models Per Provider = 3
+Request Timeout Seconds = 30
+Remote Response Timeout Seconds = 120
+Model Catalog Cache Minutes = 60
+Max Output Tokens = 160
+Max Prompt Characters = 4000
+Remote Request Cooldown Seconds = 2
 
-## Set OpenRouter key [Not Synced with Server]
-# Setting type: String
-# Default value:
-OpenRouter = 
-
-## Set OpenRouter Model [Not Synced with Server]
-# Setting type: OpenRouterModel
-# Default value: Claude3_5Sonnet
-# Acceptable values: Claude3_5Sonnet, GeminiFlashFree, Llama31_8B, Llama31_70B, WizardLM8x22B, GPT4oMini, DeepSeekChat
-OpenRouter Model = Claude3_5Sonnet
+Use Server Keys = On
+Server AI Broker = On
+Allow Player AI Prompts = Off
+Discord Prompt = Off
+Death Quips = On
+Day Quips = On
 ```
+
+`Gemini Model` and `OpenRouter Model` are retained for backward compatibility and are treated as the first configured model. Auto-discovery then appends currently usable models. A retired or unavailable model no longer permanently breaks AI output because the request advances to the next model/provider.
+
+OpenAI API usage is separate from ChatGPT subscriptions. Configure an OpenAI API key with API billing if the OpenAI provider is used.
 
 ### Jobs [beta]
 
@@ -405,6 +403,12 @@ interval: 1800
 command: !save
 interval: 3600
  ```
+
+## Development and packaging
+
+- [BUILDING.md](BUILDING.md) contains the reproducible Windows build and validation commands.
+- [PUBLISHING.md](PUBLISHING.md) contains the Thunderstore package/upload procedure and the required upstream permission warning.
+- [NOTICE.md](NOTICE.md) records original-author attribution and redistribution status.
 
 ### Notes
 
