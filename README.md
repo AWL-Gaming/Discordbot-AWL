@@ -4,7 +4,7 @@ AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://githu
 
 Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](NOTICE.md).
 
-## AWL 1.4.1 highlights
+## AWL 1.4.2 highlights
 
 - Gemini model discovery through Google's model catalog, with configured models filtered against what the current API key can actually use.
 - OpenRouter account-aware model discovery, optional free-only filtering, and ordered model failover.
