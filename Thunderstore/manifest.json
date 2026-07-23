@@ -1,8 +1,8 @@
 {
-  "name": "DiscordBot",
-  "version_number": "1.3.0",
-  "website_url": "https://github.com/RustyMods/DiscordBot",
-  "description": "Enables two-way communication between your Valheim server and Discord channels.",
+  "name": "DiscordBot_AWL",
+  "version_number": "1.4.0",
+  "website_url": "https://github.com/AWL-Gaming/Discordbot-AWL",
+  "description": "AWL-maintained DiscordBot fork with resilient AI model discovery and failover.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2333",
     "ValheimModding-JsonDotNET-13.0.4"

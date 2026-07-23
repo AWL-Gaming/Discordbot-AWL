@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Threading.Tasks;
 using HarmonyLib;
@@ -23,12 +23,12 @@ public class Screenshot : MonoBehaviour
     private string thumbnail = string.Empty;
 
     private GameObject? m_chatWindow;
-    
+
     public void Awake()
     {
         instance = this;
         recordedFrame = new Texture2D(width, height, TextureFormat.RGB24, false);
-        
+
         DiscordBotPlugin.LogDebug("Initializing screenshotter");
     }
 
@@ -43,19 +43,40 @@ public class Screenshot : MonoBehaviour
         if (Input.GetKey(DiscordBotPlugin.SelfieKey) && !isCapturing) StartSelfie();
     }
 
+    public void OnDisable()
+    {
+        if (!isCapturing) return;
+        isCapturing = false;
+        ShowHud();
+    }
+
     public void OnDestroy()
     {
+        OnDisable();
         instance = null;
     }
 
     private IEnumerator DelayedCaptureFrame()
     {
+        Texture2D? frame = null;
         HideHud();
-        yield return new WaitForSeconds(DiscordBotPlugin.ScreenshotDelay);
-        yield return new WaitForEndOfFrame();
-        Texture2D? frame = ScreenCapture.CaptureScreenshotAsTexture();
+        try
+        {
+            yield return new WaitForSeconds(DiscordBotPlugin.ScreenshotDelay);
+            yield return new WaitForEndOfFrame();
+            frame = ScreenCapture.CaptureScreenshotAsTexture();
+        }
+        finally
+        {
+            ShowHud();
+        }
 
-        ShowHud();
+        if (frame is null)
+        {
+            DiscordBotPlugin.LogWarning("Failed to capture screenshot frame");
+            isCapturing = false;
+            yield break;
+        }
 
         try
         {
@@ -64,7 +85,6 @@ public class Screenshot : MonoBehaviour
             recordedFrame.Reinitialize(width, height);
             recordedFrame.SetPixels32(img.pixels);
             recordedFrame.Apply();
-
         }
         catch (Exception ex)
         {
@@ -72,7 +92,7 @@ public class Screenshot : MonoBehaviour
             isCapturing = false;
             yield break;
         }
-        
+
         byte[]? bytes = recordedFrame.EncodeToPNG();
         if (bytes is null || bytes.Length == 0)
         {
@@ -80,11 +100,11 @@ public class Screenshot : MonoBehaviour
             isCapturing = false;
             yield break;
         }
-        
+
         SendToDiscord(bytes);
         isCapturing = false;
     }
-    
+
     public void StartCapture(string player, string quip, string avatar)
     {
         if (isCapturing) return;
@@ -118,7 +138,7 @@ public class Screenshot : MonoBehaviour
             Hud.instance.m_userHidden = false;
             Hud.instance.m_hudPressed = 0.0f;
             m_chatWindow?.SetActive(true);
-            
+
             Console.instance?.gameObject.SetActive(true);
         }
         catch
@@ -129,12 +149,25 @@ public class Screenshot : MonoBehaviour
 
     private IEnumerator DelayedSelfie()
     {
+        Texture2D? frame = null;
         HideHud();
-        yield return new WaitForSeconds(DiscordBotPlugin.ScreenshotDelay);
-        yield return new WaitForEndOfFrame();
-        Texture2D? frame = ScreenCapture.CaptureScreenshotAsTexture();
+        try
+        {
+            yield return new WaitForSeconds(DiscordBotPlugin.ScreenshotDelay);
+            yield return new WaitForEndOfFrame();
+            frame = ScreenCapture.CaptureScreenshotAsTexture();
+        }
+        finally
+        {
+            ShowHud();
+        }
 
-        ShowHud();
+        if (frame is null)
+        {
+            DiscordBotPlugin.LogWarning("Failed to capture screenshot frame");
+            isCapturing = false;
+            yield break;
+        }
 
         try
         {
@@ -150,7 +183,7 @@ public class Screenshot : MonoBehaviour
             isCapturing = false;
             yield break;
         }
-        
+
         byte[] bytes = recordedFrame.EncodeToPNG();
         if (bytes is null || bytes.Length == 0)
         {
@@ -158,7 +191,7 @@ public class Screenshot : MonoBehaviour
             isCapturing = false;
             yield break;
         }
-        
+
         SendSelfieToDiscord(bytes);
         isCapturing = false;
     }
@@ -169,7 +202,7 @@ public class Screenshot : MonoBehaviour
         StartCoroutine(DelayedSelfie());
         DiscordBotPlugin.LogDebug("Starting selfie capture");
     }
-        
+
     public void SendToDiscord(byte[] data)
     {
         Discord.instance?.SendImageMessage(Webhook.DeathFeed, playerName, message, data, $"{DateTime.UtcNow:yyyyMMdd_HHmmss}.png", thumbnail: thumbnail);

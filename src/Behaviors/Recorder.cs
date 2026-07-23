@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -15,9 +15,9 @@ public class Recorder : MonoBehaviour
     public string message = string.Empty;
     private string thumbnail = string.Empty;
 
-    [Header("GIF Settings")] 
+    [Header("GIF Settings")]
     private readonly List<Image> recordedImages = new();
-    
+
     private bool isRecording;
     private float recordStartTime;
     private Coroutine? recordingCoroutine;
@@ -32,15 +32,33 @@ public class Recorder : MonoBehaviour
     public void Awake()
     {
         instance = this;
-        
+
         DiscordBotPlugin.LogDebug("Initializing GIF recorder");
     }
-    
+
+    public void OnDisable()
+    {
+        StopAndRestoreHud();
+    }
+
     public void OnDestroy()
     {
+        StopAndRestoreHud();
         instance = null;
     }
-    
+
+    private void StopAndRestoreHud()
+    {
+        if (recordingCoroutine != null)
+        {
+            StopCoroutine(recordingCoroutine);
+            recordingCoroutine = null;
+        }
+
+        isRecording = false;
+        Screenshot.instance?.ShowHud();
+    }
+
     public void StartRecording(string player, string quip, string avatar)
     {
         if (isRecording) return;
@@ -53,27 +71,41 @@ public class Recorder : MonoBehaviour
         recordingCoroutine = StartCoroutine(Record());
         DiscordBotPlugin.LogDebug("Starting gif recording");
     }
-    
+
     private IEnumerator Record()
     {
         Screenshot.instance?.HideHud();
         float interval = 1f / fps;
-        
-        while (isRecording && Time.time - recordStartTime < recordDuration)
+
+        try
         {
-            yield return new WaitForEndOfFrame();
-            Image img = new Image(ScreenCapture.CaptureScreenshotAsTexture());
-            recordedImages.Add(img);
-            yield return new WaitForSeconds(interval);
+            while (isRecording && Time.time - recordStartTime < recordDuration)
+            {
+                yield return new WaitForEndOfFrame();
+                Image img = new Image(ScreenCapture.CaptureScreenshotAsTexture());
+                recordedImages.Add(img);
+                yield return new WaitForSeconds(interval);
+            }
         }
-        isRecording = false;
-        Screenshot.instance?.ShowHud();
-        
-        Thread thread = new Thread(CreateGif);
+        finally
+        {
+            isRecording = false;
+            recordingCoroutine = null;
+            Screenshot.instance?.ShowHud();
+        }
+
+        if (recordedImages.Count == 0)
+        {
+            DiscordBotPlugin.LogWarning("GIF recording captured no frames");
+            Cleanup();
+            yield break;
+        }
+
+        Thread thread = new Thread(CreateGif) { IsBackground = true };
         thread.Start();
         StartCoroutine(WaitForBytes());
     }
-    
+
     private IEnumerator WaitForBytes()
     {
         while (gifBytes == null) yield return null;
@@ -86,31 +118,38 @@ public class Recorder : MonoBehaviour
         recordedImages.Clear();
         gifBytes = null;
     }
-    
+
     private void CreateGif()
     {
-        GIFEncoder encoder = new GIFEncoder
+        try
         {
-            useGlobalColorTable = true,
-            repeat = 0,
-            FPS = fps,
-            transparent = new Color32(255, 0, 255, 255),
-            dispose = 1
-        };
+            GIFEncoder encoder = new GIFEncoder
+            {
+                useGlobalColorTable = true,
+                repeat = 0,
+                FPS = fps,
+                transparent = new Color32(255, 0, 255, 255),
+                dispose = 1
+            };
 
-        MemoryStream stream = new MemoryStream();
-        encoder.Start(stream);
-        foreach (Image? img in recordedImages)
-        {
-            img.ResizeBilinear(gifWidth, gifHeight);
-            img.Flip();
-            encoder.AddFrame(img);
+            using MemoryStream stream = new MemoryStream();
+            encoder.Start(stream);
+            foreach (Image img in recordedImages)
+            {
+                img.ResizeBilinear(gifWidth, gifHeight);
+                img.Flip();
+                encoder.AddFrame(img);
+            }
+            encoder.Finish();
+            gifBytes = stream.ToArray();
         }
-        encoder.Finish();
-        gifBytes = stream.ToArray();
-        stream.Close();
+        catch (Exception ex)
+        {
+            DiscordBotPlugin.LogError($"Failed to create death GIF: {ex.Message}");
+            gifBytes = Array.Empty<byte>();
+        }
     }
-    
+
     private void SendGif(byte[]? bytes)
     {
         if (bytes == null || bytes.Length == 0)

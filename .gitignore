@@ -1,0 +1,10 @@
+.vs/
+bin/
+obj/
+build/
+Nexus/
+*.user
+*.suo
+*.nupkg
+Thunderstore/DiscordBot_v*.zip
+Thunderstore/DiscordBot_v*/

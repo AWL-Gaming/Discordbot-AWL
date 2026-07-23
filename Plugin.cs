@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -14,13 +14,14 @@ using ServerSync;
 using UnityEngine;
 
 namespace DiscordBot;
+
 public static class Extensions
 {
     public static string ToURL(this Webhook type) => type switch
     {
         Webhook.Chat => DiscordBotPlugin.ChatWebhookURL,
         Webhook.Notifications => DiscordBotPlugin.NoticeWebhookURL,
-        Webhook.Commands =>DiscordBotPlugin.CommandWebhookURL,
+        Webhook.Commands => DiscordBotPlugin.CommandWebhookURL,
         Webhook.DeathFeed => DiscordBotPlugin.DeathFeedWebhookURL,
         _ => DiscordBotPlugin.ChatWebhookURL
     };
@@ -31,7 +32,7 @@ public static class Extensions
         Channel.Commands => DiscordBotPlugin.CommandChannelID,
         _ => DiscordBotPlugin.ChatChannelID,
     };
-        
+
     public static T GetOrAddComponent<T>(this GameObject obj) where T : Component
     {
         return obj.TryGetComponent<T>(out var component) ? component : obj.AddComponent<T>();
@@ -41,8 +42,8 @@ public enum Toggle { On = 1, Off = 0 }
 
 public enum Webhook
 {
-    Notifications, 
-    Chat, 
+    Notifications,
+    Chat,
     Commands,
     DeathFeed
 }
@@ -54,7 +55,7 @@ public enum ChatDisplay { Player, Bot }
 public class DiscordBotPlugin : BaseUnityPlugin
 {
     internal const string ModName = "DiscordBot";
-    internal const string ModVersion = "1.3.0";
+    internal const string ModVersion = "1.4.0";
     internal const string Author = "RustyMods";
     private const string ModGUID = Author + "." + ModName;
     private const string ConfigFileName = ModGUID + ".cfg";
@@ -65,7 +66,7 @@ public class DiscordBotPlugin : BaseUnityPlugin
     private static readonly ConfigSync ConfigSync = new(ModGUID) { DisplayName = ModName, CurrentVersion = ModVersion, MinimumRequiredVersion = ModVersion };
     public static readonly Dir directory = new(Paths.ConfigPath, "DiscordBot");
     public static DiscordBotPlugin m_instance = null!;
-    
+
     private static ConfigEntry<Toggle> _serverConfigLocked = null!;
     #region extra webhooks
     private static ConfigEntry<string> m_startWorldHook = null!;
@@ -136,6 +137,24 @@ public class DiscordBotPlugin : BaseUnityPlugin
     private static ConfigEntry<Toggle> m_allowDiscordPrompt = null!;
     private static ConfigEntry<Toggle> m_improveDeathQuips = null!;
     private static ConfigEntry<Toggle> m_improveDayQuips = null!;
+    private static ConfigEntry<string> m_aiProviderOrder = null!;
+    private static ConfigEntry<string> m_geminiModels = null!;
+    private static ConfigEntry<Toggle> m_geminiAutoDiscover = null!;
+    private static ConfigEntry<string> m_openRouterModels = null!;
+    private static ConfigEntry<Toggle> m_openRouterAutoDiscover = null!;
+    private static ConfigEntry<Toggle> m_openRouterFreeOnly = null!;
+    private static ConfigEntry<string> m_openAIModels = null!;
+    private static ConfigEntry<string> m_deepSeekModels = null!;
+    private static ConfigEntry<int> m_aiMaxAttempts = null!;
+    private static ConfigEntry<int> m_aiModelsPerProvider = null!;
+    private static ConfigEntry<int> m_aiRequestTimeoutSeconds = null!;
+    private static ConfigEntry<int> m_aiCatalogCacheMinutes = null!;
+    private static ConfigEntry<int> m_aiMaxOutputTokens = null!;
+    private static ConfigEntry<int> m_aiMaxPromptCharacters = null!;
+    private static ConfigEntry<float> m_aiRemoteRequestCooldown = null!;
+    private static ConfigEntry<int> m_aiRemoteResponseTimeoutSeconds = null!;
+    private static ConfigEntry<Toggle> m_serverAIBroker = null!;
+    private static ConfigEntry<Toggle> m_allowPlayerAIPrompts = null!;
     #endregion
 
     private static ConfigEntry<Toggle> m_enableJobs = null!;
@@ -183,6 +202,19 @@ public class DiscordBotPlugin : BaseUnityPlugin
     public static bool AllowDiscordPrompt => m_allowDiscordPrompt.Value is Toggle.On;
     public static bool ImproveDeathQuips => m_improveDeathQuips.Value is Toggle.On;
     public static bool ImproveDayQuips => m_improveDayQuips.Value is Toggle.On;
+    public static bool GeminiAutoDiscover => m_geminiAutoDiscover.Value is Toggle.On;
+    public static bool OpenRouterAutoDiscover => m_openRouterAutoDiscover.Value is Toggle.On;
+    public static bool OpenRouterFreeOnly => m_openRouterFreeOnly.Value is Toggle.On;
+    public static bool ServerAIBrokerEnabled => m_serverAIBroker.Value is Toggle.On;
+    public static bool AllowPlayerAIPrompts => m_allowPlayerAIPrompts.Value is Toggle.On;
+    public static int AIMaxAttempts => Math.Max(1, m_aiMaxAttempts.Value);
+    public static int AIModelsPerProvider => Math.Max(1, m_aiModelsPerProvider.Value);
+    public static int AIRequestTimeoutSeconds => Math.Max(1, m_aiRequestTimeoutSeconds.Value);
+    public static int AICatalogCacheMinutes => Math.Max(1, m_aiCatalogCacheMinutes.Value);
+    public static int AIMaxOutputTokens => Math.Max(8, m_aiMaxOutputTokens.Value);
+    public static int AIMaxPromptCharacters => Math.Max(128, m_aiMaxPromptCharacters.Value);
+    public static float AIRemoteRequestCooldown => Math.Max(0f, m_aiRemoteRequestCooldown.Value);
+    public static int AIRemoteResponseTimeoutSeconds => Math.Max(10, m_aiRemoteResponseTimeoutSeconds.Value);
 
     public static void LogWarning(string message)
     {
@@ -202,14 +234,14 @@ public class DiscordBotPlugin : BaseUnityPlugin
     private static readonly Dictionary<string, Resolution> resolutions = new();
     public static List<string> OnWorldStartHooks => SyncedWebhooks.start.IsNullOrWhiteSpace() ? new List<string>() : new StringListConfig(SyncedWebhooks.start).list;
     public static List<string> OnWorldSaveHooks => SyncedWebhooks.save.IsNullOrWhiteSpace() ? new List<string>() : new StringListConfig(SyncedWebhooks.save).list;
-    public static List<string> OnWorldShutdownHooks => SyncedWebhooks.shutdown.IsNullOrWhiteSpace() ?  new List<string>() : new StringListConfig(SyncedWebhooks.shutdown).list;
-    public static List<string> OnLoginHooks => SyncedWebhooks.login.IsNullOrWhiteSpace() ?  new List<string>() : new StringListConfig(SyncedWebhooks.login).list;
+    public static List<string> OnWorldShutdownHooks => SyncedWebhooks.shutdown.IsNullOrWhiteSpace() ? new List<string>() : new StringListConfig(SyncedWebhooks.shutdown).list;
+    public static List<string> OnLoginHooks => SyncedWebhooks.login.IsNullOrWhiteSpace() ? new List<string>() : new StringListConfig(SyncedWebhooks.login).list;
     public static List<string> OnLogoutHooks => SyncedWebhooks.logout.IsNullOrWhiteSpace() ? new List<string>() : new StringListConfig(SyncedWebhooks.logout).list;
     public static List<string> OnEventHooks => SyncedWebhooks.events.IsNullOrWhiteSpace() ? new List<string>() : new StringListConfig(SyncedWebhooks.events).list;
     public static List<string> OnNewDayHooks => SyncedWebhooks.newDay.IsNullOrWhiteSpace() ? new List<string>() : new StringListConfig(SyncedWebhooks.newDay).list;
     public static List<string> OnUseCommandHooks => SyncedWebhooks.useCommands.IsNullOrWhiteSpace() ? new List<string>() : new StringListConfig(SyncedWebhooks.useCommands).list;
     public static List<string> OnBossDeathHooks => SyncedWebhooks.boss.IsNullOrWhiteSpace() ? new List<string>() : new StringListConfig(SyncedWebhooks.boss).list;
-    
+
     public static bool JobsEnabled => m_enableJobs.Value is Toggle.On;
 
     private static readonly CustomSyncedValue<string> ServerSyncedWebhooks = new(ConfigSync, "RustyMods.DiscordBot.SyncedWebhooks", "");
@@ -217,23 +249,74 @@ public class DiscordBotPlugin : BaseUnityPlugin
     private static ServerAIOption SyncedAIOption = new();
     private static ServerWebhooks SyncedWebhooks = new();
 
-    public static AIService GetAIServiceOption() => AIService switch
+    public static AIService GetAIServiceOption() => AIService;
+    public static OpenRouterModel GetOpenRouterOption() => OpenRouterModel;
+    public static GeminiModel GetGeminiOption() => GeminiModel;
+    public static string GetChatGPTKey() => ChatGPT_KEY;
+    public static string GetGeminiKey() => Gemini_KEY;
+    public static string GetDeepSeekKey() => DeepSeek_KEY;
+    public static string GetOpenRouterKey() => OpenRouter_KEY;
+
+    public static bool HasAnyLocalAIKey() =>
+        !string.IsNullOrWhiteSpace(ChatGPT_KEY) ||
+        !string.IsNullOrWhiteSpace(Gemini_KEY) ||
+        !string.IsNullOrWhiteSpace(DeepSeek_KEY) ||
+        !string.IsNullOrWhiteSpace(OpenRouter_KEY);
+
+    public static bool CanUseServerAI()
     {
-        AIService.ChatGPT => string.IsNullOrEmpty(ChatGPT_KEY) && UseServerKeys ? SyncedAIOption.service : AIService.ChatGPT,
-        AIService.Gemini => string.IsNullOrEmpty(Gemini_KEY) && UseServerKeys ? SyncedAIOption.service : AIService.Gemini,
-        AIService.DeepSeek => string.IsNullOrEmpty(DeepSeek_KEY) && UseServerKeys ? SyncedAIOption.service : AIService.DeepSeek,
-        AIService.OpenRouter => string.IsNullOrEmpty(OpenRouter_KEY) && UseServerKeys ? SyncedAIOption.service : AIService.OpenRouter,
-        _ => AIService
-    };
-    public static OpenRouterModel GetOpenRouterOption() => string.IsNullOrEmpty(OpenRouter_KEY) && UseServerKeys ? SyncedAIOption.openRouterModel : OpenRouterModel;
-    public static GeminiModel GetGeminiOption() => string.IsNullOrEmpty(Gemini_KEY) && UseServerKeys ? SyncedAIOption.geminiModel : GeminiModel;
-    public static string GetChatGPTKey() => string.IsNullOrEmpty(ChatGPT_KEY) && UseServerKeys ? SyncedAIKeys.ChatGPT : ChatGPT_KEY;
-    public static string GetGeminiKey() => string.IsNullOrEmpty(Gemini_KEY) && UseServerKeys ? SyncedAIKeys.Gemini : Gemini_KEY;
-    public static string GetDeepSeekKey() => string.IsNullOrEmpty(DeepSeek_KEY) && UseServerKeys ? SyncedAIKeys.DeepSeek : DeepSeek_KEY;
-    public static string GetOpenRouterKey() => string.IsNullOrEmpty(OpenRouter_KEY) && UseServerKeys ? SyncedAIKeys.OpenRouter : OpenRouter_KEY;
+        if (!UseServerKeys || !ServerAIBrokerEnabled) return false;
+        if (ZNet.instance?.IsServer() ?? false) return HasAnyLocalAIKey();
+        return SyncedAIOption.serverAIAvailable;
+    }
+
+    public static List<AIService> GetAIProviderOrder()
+    {
+        List<AIService> providers = ParseEnumList<AIService>(m_aiProviderOrder.Value);
+        if (AIService != AIService.None) providers.Insert(0, AIService);
+        return providers.Where(provider => provider != AIService.None).Distinct().ToList();
+    }
+
+    public static List<string> GetGeminiModels()
+    {
+        string legacy = GeminiModel.GetAttributeOfType<InternalName>().internalName;
+        return PrependModel(legacy, ParseStringList(m_geminiModels.Value));
+    }
+
+    public static List<string> GetOpenRouterModels()
+    {
+        string legacy = OpenRouterModel.GetAttributeOfType<InternalName>().internalName;
+        return PrependModel(legacy, ParseStringList(m_openRouterModels.Value));
+    }
+
+    public static List<string> GetOpenAIModels() => ParseStringList(m_openAIModels.Value);
+    public static List<string> GetDeepSeekModels() => ParseStringList(m_deepSeekModels.Value);
+
+    private static List<string> ParseStringList(string value) => value
+        .Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+        .Select(item => item.Trim())
+        .Where(item => item.Length > 0)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    private static List<T> ParseEnumList<T>(string value) where T : struct
+    {
+        List<T> result = new();
+        foreach (string item in ParseStringList(value))
+        {
+            if (Enum.TryParse(item, true, out T parsed)) result.Add(parsed);
+        }
+        return result;
+    }
+
+    private static List<string> PrependModel(string primary, List<string> models)
+    {
+        models.Insert(0, primary);
+        return models.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
 
     public static readonly Record records = new();
-    
+
     // TODO : Figure out to make sure connecting peer is connecting to the right server
 
     public void Awake()
@@ -263,7 +346,7 @@ public class DiscordBotPlugin : BaseUnityPlugin
         m_chatChannelID = config("3 - Chat", "Channel ID", "", "Set channel ID to monitor for messages");
         m_chatEnabled = config("3 - Chat", "Enabled", Toggle.On, "If on, bot will send message when player shouts and monitor discord for messages");
         m_chatType = config("3 - Chat", "Display As", ChatDisplay.Player, "Set how chat messages appear, if Player, message sent by player, else sent by bot with a prefix that player is saying");
-        
+
         m_commandWebhookURL = config("4 - Commands", "Webhook URL", "", "Set discord webhook to display feedback messages from commands [Server Only]", false);
         m_commandWebhookURL.SettingChanged += (_, _) => UpdateServerWebhooks();
         m_commandChannelID = config("4 - Commands", "Channel ID", "", "Set channel ID to monitor for input commands");
@@ -274,7 +357,7 @@ public class DiscordBotPlugin : BaseUnityPlugin
         m_enableJobs = config("4 - Commands", "Jobs", Toggle.On, "If on, jobs are enabled");
 
         m_botToken = config("5 - Setup", "BOT TOKEN", "", "Add bot token here, server only", false);
-        
+
         m_deathNotice = config("6 - Death Feed", "Enabled", Toggle.On, "If on, bot will send message when player dies");
         m_deathFeedURL = config("6 - Death Feed", "Webhook URL", "", "Set webhook to receive death feed messages [Server Only]", false);
         m_deathFeedURL.SettingChanged += (_, _) => UpdateServerWebhooks();
@@ -285,7 +368,7 @@ public class DiscordBotPlugin : BaseUnityPlugin
         Resolution medium = new(960, 540);
         Resolution hd = new(1280, 720);
         Resolution super = new(1920, 1080);
-        
+
         m_screenshotResolution = config("6 - Death Feed", "Screenshot Resolution", medium.ToString(),
             new ConfigDescription("Set resolution",
                 new AcceptableValueList<string>(
@@ -293,7 +376,7 @@ public class DiscordBotPlugin : BaseUnityPlugin
                     medium.ToString(),
                     hd.ToString(),
                     super.ToString()
-                    )), 
+                    )),
             false);
         m_screenshotGif = config("6 - Death Feed", "Screenshot GIF", Toggle.On, "If on, bot will post gif of death", false);
         m_gifFPS = config("6 - Death Feed", "GIF FPS", 30, new ConfigDescription("Set frames per second", new AcceptableValueRange<int>(1, 30)), false);
@@ -303,25 +386,25 @@ public class DiscordBotPlugin : BaseUnityPlugin
         Resolution small = new(320, 180);
         Resolution standard = new(480, 270);
         Resolution banner = new(640, 360);
-        
+
         m_gifResolution = config("6 - Death Feed", "GIF Resolution", standard.ToString(),
             new ConfigDescription("Set resolution",
                 new AcceptableValueList<string>(
                     thumbnail.ToString(),
-                    small.ToString(), 
+                    small.ToString(),
                     standard.ToString(),
                     banner.ToString()
-                )), 
+                )),
             false);
 
         m_selfieKey = config("1 - General", "Selfie", KeyCode.None, "Hotkey to take selfie and send to discord", false);
 
         m_startWorldHook = config("7 - Webhooks", "On World Start", "", new ConfigDescription("If empty, will use default notification webhook [Server Only]", null, new ConfigurationManagerAttributes() { CustomDrawer = StringListConfig.Draw }), false);
-        m_saveWebhook = config("7 - Webhooks", "On World Save", "", new ConfigDescription("If empty, will use default notification webhook [Server Only]", null, new ConfigurationManagerAttributes(){ CustomDrawer = StringListConfig.Draw}), false);
-        m_shutdownWebhook = config("7 - Webhooks", "On World Shutdown", "", new ConfigDescription("If empty, will use default notification webhook [Server Only]", null, new ConfigurationManagerAttributes(){ CustomDrawer = StringListConfig.Draw}), false);
-        m_loginWebhook = config("7 - Webhooks", "On Login",  "", new ConfigDescription("If empty, will use default notification webhook [Server Only]", null, new ConfigurationManagerAttributes(){ CustomDrawer = StringListConfig.Draw}), false);
-        m_logoutWebhook = config("7 - Webhooks", "On Logout", "", new ConfigDescription("If empty, will use default notification webhook [Server Only]", null, new ConfigurationManagerAttributes(){ CustomDrawer = StringListConfig.Draw}), false);
-        m_eventWebhook = config("7 - Webhooks", "On Event", "", new ConfigDescription("If empty, will use default notification webhook [Server Only]", null, new ConfigurationManagerAttributes(){ CustomDrawer = StringListConfig.Draw}), false);
+        m_saveWebhook = config("7 - Webhooks", "On World Save", "", new ConfigDescription("If empty, will use default notification webhook [Server Only]", null, new ConfigurationManagerAttributes() { CustomDrawer = StringListConfig.Draw }), false);
+        m_shutdownWebhook = config("7 - Webhooks", "On World Shutdown", "", new ConfigDescription("If empty, will use default notification webhook [Server Only]", null, new ConfigurationManagerAttributes() { CustomDrawer = StringListConfig.Draw }), false);
+        m_loginWebhook = config("7 - Webhooks", "On Login", "", new ConfigDescription("If empty, will use default notification webhook [Server Only]", null, new ConfigurationManagerAttributes() { CustomDrawer = StringListConfig.Draw }), false);
+        m_logoutWebhook = config("7 - Webhooks", "On Logout", "", new ConfigDescription("If empty, will use default notification webhook [Server Only]", null, new ConfigurationManagerAttributes() { CustomDrawer = StringListConfig.Draw }), false);
+        m_eventWebhook = config("7 - Webhooks", "On Event", "", new ConfigDescription("If empty, will use default notification webhook [Server Only]", null, new ConfigurationManagerAttributes() { CustomDrawer = StringListConfig.Draw }), false);
         m_newDayWebhook = config("7 - Webhooks", "On New Day", "", new ConfigDescription("If empty, will use default notification webhook [Server Only]", null, new ConfigurationManagerAttributes() { CustomDrawer = StringListConfig.Draw }), false);
         m_useCommandWebhook = config("7 - Webhooks", "On Use Command", "",
             new ConfigDescription("If empty, will use default notification webhook [Server Only]", null,
@@ -338,16 +421,34 @@ public class DiscordBotPlugin : BaseUnityPlugin
         m_newDayWebhook.SettingChanged += (_, _) => UpdateServerWebhooks();
         m_useCommandWebhook.SettingChanged += (_, _) => UpdateServerWebhooks();
         m_bossWebhook.SettingChanged += (_, _) => UpdateServerWebhooks();
-        
+
         m_aiService = config("8 - AI", "Provider", AIService.Gemini, "Set which Artificial Intelligence API to use", false);
         m_chatGPTAPIKEY = config("8 - AI", "ChatGPT", "", "Set ChatGPT key", false);
         m_geminiAPIKEY = config("8 - AI", "Gemini", "", "Set Gemini key", false);
         m_deepSeekAPIKEY = config("8 - AI", "DeepSeek", "", "Set DeepSeek key", false);
         m_openRouterAPIKEY = config("8 - AI", "OpenRouter", "", "Set OpenRouter key", false);
-        m_openRouterModel = config("8 - AI", "OpenRouter Model", OpenRouterModel.Claude3_5Sonnet, "Set OpenRouter Model", false);
-        m_useServerKeys = config("8 - AI", "Use Server Keys", Toggle.On, "If on and client does not have API Keys, will try to use server's API Keys");
-        m_geminiModel = config("8 - AI", "Gemini Model", GeminiModel.Flash2_0, "Set Gemini Model", false);
-        m_allowDiscordPrompt = config("8 - AI", "Discord Prompt", Toggle.Off, "If on, users can prompt server's AI using command !prompt");
+        m_openRouterModel = config("8 - AI", "OpenRouter Model", OpenRouterModel.AutoFree, "Legacy primary OpenRouter model. Prefer OpenRouter Models for ordered failover.", false);
+        m_useServerKeys = config("8 - AI", "Use Server Keys", Toggle.On, "If enabled, clients without local keys send AI requests to the server broker. API keys are never synchronized to clients.");
+        m_geminiModel = config("8 - AI", "Gemini Model", GeminiModel.Flash3_6, "Legacy primary Gemini model. Prefer Gemini Models for ordered failover.", false);
+        m_allowDiscordPrompt = config("8 - AI", "Discord Prompt", Toggle.Off, "If on, Discord users can prompt the server AI using !prompt");
+        m_aiProviderOrder = config("8 - AI", "Provider Order", "Gemini, OpenRouter, ChatGPT, DeepSeek", "Ordered provider failover. The Provider setting is tried first when enabled.", false);
+        m_geminiModels = config("8 - AI", "Gemini Models", "gemini-3.6-flash, gemini-3.5-flash-lite, gemini-3.5-flash, gemini-3.1-flash-lite, gemini-flash-latest, gemini-flash-lite-latest, gemini-3.1-pro-preview, gemini-3-flash-preview, gemini-pro-latest, gemini-2.5-flash-lite, gemini-2.5-flash, gemini-2.5-pro", "Ordered Gemini model failover list.", false);
+        m_geminiAutoDiscover = config("8 - AI", "Gemini Auto Discover", Toggle.On, "Discover text-generation models available to the configured Gemini key.", false);
+        m_openRouterModels = config("8 - AI", "OpenRouter Models", "openrouter/free", "Ordered OpenRouter model failover list. Discovered models are appended when enabled.", false);
+        m_openRouterAutoDiscover = config("8 - AI", "OpenRouter Auto Discover", Toggle.On, "Discover models usable by the configured OpenRouter key and account preferences.", false);
+        m_openRouterFreeOnly = config("8 - AI", "OpenRouter Free Only", Toggle.On, "Only auto-discover OpenRouter models with zero prompt, completion, and request price.", false);
+        m_openAIModels = config("8 - AI", "OpenAI Models", "gpt-5.6-luna, gpt-5.6-terra, gpt-5.6-sol, gpt-5.6, gpt-5.5, gpt-5.4-mini, gpt-5.4-nano, gpt-4.1-mini", "Ordered OpenAI model failover list. Cost-efficient models are tried before frontier models by default.", false);
+        m_deepSeekModels = config("8 - AI", "DeepSeek Models", "deepseek-chat, deepseek-reasoner", "Ordered DeepSeek model failover list.", false);
+        m_aiMaxAttempts = config("8 - AI", "Max Attempts", 12, "Maximum provider/model attempts per AI request.", false);
+        m_aiModelsPerProvider = config("8 - AI", "Models Per Provider", 3, "Maximum model attempts before failing over to the next configured provider.", false);
+        m_aiRequestTimeoutSeconds = config("8 - AI", "Request Timeout Seconds", 30, "Timeout for each AI API request.", false);
+        m_aiCatalogCacheMinutes = config("8 - AI", "Model Catalog Cache Minutes", 60, "How long discovered model catalogs are cached.", false);
+        m_aiMaxOutputTokens = config("8 - AI", "Max Output Tokens", 160, "Maximum output tokens requested for a response.", false);
+        m_aiMaxPromptCharacters = config("8 - AI", "Max Prompt Characters", 4000, "Maximum client prompt length accepted by the server AI broker.", false);
+        m_aiRemoteRequestCooldown = config("8 - AI", "Remote Request Cooldown Seconds", 2f, "Minimum delay between AI broker requests from the same client.", false);
+        m_aiRemoteResponseTimeoutSeconds = config("8 - AI", "Remote Response Timeout Seconds", 120, "Maximum time a client waits for a server AI broker response.", false);
+        m_serverAIBroker = config("8 - AI", "Server AI Broker", Toggle.On, "Execute client death/day quip AI requests on the server without exposing API keys.", false);
+        m_allowPlayerAIPrompts = config("8 - AI", "Allow Player AI Prompts", Toggle.Off, "Allow manual in-game player prompts through the server AI broker. Automatic death/day quips remain allowed.", false);
         m_chatGPTAPIKEY.SettingChanged += (_, _) => UpdateServerAIKeys();
         m_geminiAPIKEY.SettingChanged += (_, _) => UpdateServerAIKeys();
         m_deepSeekAPIKEY.SettingChanged += (_, _) => UpdateServerAIKeys();
@@ -355,11 +456,13 @@ public class DiscordBotPlugin : BaseUnityPlugin
         m_aiService.SettingChanged += (_, _) => UpdateServerAIOption();
         m_openRouterModel.SettingChanged += (_, _) => UpdateServerAIOption();
         m_geminiModel.SettingChanged += (_, _) => UpdateServerAIOption();
+        m_aiProviderOrder.SettingChanged += (_, _) => UpdateServerAIOption();
+        m_serverAIBroker.SettingChanged += (_, _) => UpdateServerAIOption();
         m_serverKeys.ValueChanged += () =>
         {
-            if (string.IsNullOrWhiteSpace(m_serverKeys.Value) || (ZNet.instance?.IsServer() ?? false)) return;
-            SyncedAIKeys = new ServerKeys(m_serverKeys.Value);
-            LogDebug("Received server AI keys");
+            if (ZNet.instance?.IsServer() ?? false) return;
+            // Version 1.4.0 no longer accepts API keys over config sync.
+            SyncedAIKeys = new ServerKeys();
         };
         m_serverOptions.ValueChanged += () =>
         {
@@ -393,7 +496,7 @@ public class DiscordBotPlugin : BaseUnityPlugin
             m_instance.gameObject.GetOrAddComponent<Screenshot>();
             m_instance.gameObject.GetOrAddComponent<Recorder>();
             m_instance.gameObject.GetOrAddComponent<ChatAI>();
-            
+
             if (!__instance.IsServer()) return;
             m_instance.gameObject.GetOrAddComponent<DiscordGatewayClient>();
             m_instance.gameObject.GetOrAddComponent<JobManager>();
@@ -407,16 +510,16 @@ public class DiscordBotPlugin : BaseUnityPlugin
     {
         if (!(ZNet.instance?.IsServer() ?? false)) return;
         SyncedWebhooks = new ServerWebhooks(
-            m_notificationWebhookURL.Value, 
-            m_commandWebhookURL.Value, 
+            m_notificationWebhookURL.Value,
+            m_commandWebhookURL.Value,
             m_chatWebhookURL.Value,
-            m_deathFeedURL.Value, 
+            m_deathFeedURL.Value,
             m_startWorldHook.Value,
-            m_saveWebhook.Value, 
-            m_shutdownWebhook.Value, 
-            m_loginWebhook.Value, 
+            m_saveWebhook.Value,
+            m_shutdownWebhook.Value,
+            m_loginWebhook.Value,
             m_logoutWebhook.Value,
-            m_eventWebhook.Value, 
+            m_eventWebhook.Value,
             m_newDayWebhook.Value,
             m_useCommandWebhook.Value,
             m_bossWebhook.Value
@@ -427,15 +530,16 @@ public class DiscordBotPlugin : BaseUnityPlugin
     private static void UpdateServerAIKeys()
     {
         if (!(ZNet.instance?.IsServer() ?? false)) return;
-        ServerKeys serverKeys = new ServerKeys(ChatGPT_KEY, Gemini_KEY, DeepSeek_KEY, OpenRouter_KEY);
-        m_serverKeys.Value = serverKeys.ToString();
-        records.Log(LogLevel.Info, "Updating server AI API keys");
+        // Never synchronize bearer credentials to clients. Clients use the server AI broker.
+        m_serverKeys.Value = string.Empty;
+        UpdateServerAIOption();
+        records.Log(LogLevel.Info, "Updated server AI credential availability without synchronizing API keys");
     }
 
     private static void UpdateServerAIOption()
     {
         if (!(ZNet.instance?.IsServer() ?? false)) return;
-        ServerAIOption option = new(AIService, OpenRouterModel, GeminiModel);
+        ServerAIOption option = new(AIService, OpenRouterModel, GeminiModel, ServerAIBrokerEnabled && HasAnyLocalAIKey());
         m_serverOptions.Value = option.ToString();
         records.Log(LogLevel.Info, "Updating server AI options");
     }
@@ -560,7 +664,7 @@ public class DiscordBotPlugin : BaseUnityPlugin
     {
         return config(group, name, value, new ConfigDescription(description), synchronizedSetting);
     }
-    
+
     public class ConfigurationManagerAttributes
     {
         [UsedImplicitly] public int? Order = null!;
@@ -585,7 +689,7 @@ public class DiscordBotPlugin : BaseUnityPlugin
         public readonly string useCommands = "";
         public readonly string boss = "";
 
-        public ServerWebhooks(){}
+        public ServerWebhooks() { }
         public ServerWebhooks(string notifications, string commands, string chat, string death, string start, string save,
             string shutdown, string login, string logout, string events, string newDay, string useCommands, string boss)
         {
@@ -611,7 +715,7 @@ public class DiscordBotPlugin : BaseUnityPlugin
             notifications = parts[0];
             commands = parts[1];
             chat = parts[2];
-            death =  parts[3];
+            death = parts[3];
             start = parts[4];
             save = parts[5];
             shutdown = parts[6];
@@ -620,18 +724,18 @@ public class DiscordBotPlugin : BaseUnityPlugin
             events = parts[9];
             newDay = parts[10];
             useCommands = parts[11];
-            boss  = parts[12];
+            boss = parts[12];
         }
         public override string ToString() => $"{notifications};{commands};{chat};{death};{start};{save};{shutdown};{login};{logout};{events};{newDay};{useCommands};{boss}";
     }
-    
+
     public class ServerKeys
     {
         public readonly string ChatGPT = "";
         public readonly string Gemini = "";
         public readonly string DeepSeek = "";
         public readonly string OpenRouter = "";
-        public ServerKeys(){}
+        public ServerKeys() { }
         public ServerKeys(string ChatGPT, string Gemini, string DeepSeek, string OpenRouter)
         {
             this.ChatGPT = ChatGPT;
@@ -656,8 +760,9 @@ public class DiscordBotPlugin : BaseUnityPlugin
     {
         public readonly AIService service = AIService.Gemini;
         public readonly OpenRouterModel openRouterModel = OpenRouterModel.Claude3_5Sonnet;
-        public readonly GeminiModel geminiModel = GeminiModel.Flash2_0;
-        public ServerAIOption(){}
+        public readonly GeminiModel geminiModel = GeminiModel.Flash3_6;
+        public readonly bool serverAIAvailable;
+        public ServerAIOption() { }
         public ServerAIOption(string config)
         {
             var parts = config.Split(';');
@@ -665,15 +770,17 @@ public class DiscordBotPlugin : BaseUnityPlugin
             Enum.TryParse(parts[0], true, out service);
             Enum.TryParse(parts[1], true, out openRouterModel);
             Enum.TryParse(parts[2], true, out geminiModel);
+            if (parts.Length >= 4) bool.TryParse(parts[3], out serverAIAvailable);
         }
-        public ServerAIOption(AIService service, OpenRouterModel openRouterModel, GeminiModel geminiModel)
+        public ServerAIOption(AIService service, OpenRouterModel openRouterModel, GeminiModel geminiModel, bool serverAIAvailable)
         {
             this.service = service;
             this.openRouterModel = openRouterModel;
             this.geminiModel = geminiModel;
+            this.serverAIAvailable = serverAIAvailable;
         }
 
-        public override string ToString() => $"{service};{openRouterModel};{geminiModel}";
+        public override string ToString() => $"{service};{openRouterModel};{geminiModel};{serverAIAvailable}";
     }
 
     public class Record
