@@ -16,12 +16,12 @@ public class Recorder : MonoBehaviour
     private string thumbnail = string.Empty;
 
     [Header("GIF Settings")]
-    private readonly List<Image> recordedImages = new();
-
     private bool isRecording;
+    private bool isProcessing;
     private float recordStartTime;
+    private int generation;
     private Coroutine? recordingCoroutine;
-    private byte[]? gifBytes;
+    private Coroutine? waitCoroutine;
     private static int gifHeight => DiscordBotPlugin.GifResolution.height;
     private static int gifWidth => DiscordBotPlugin.GifResolution.width;
     private static int fps => DiscordBotPlugin.GIF_FPS;
@@ -29,10 +29,24 @@ public class Recorder : MonoBehaviour
 
     public static Recorder? instance;
 
+    private sealed class GifEncodeJob
+    {
+        public readonly int Generation;
+        public readonly List<Image> Frames;
+        public volatile bool Completed;
+        public byte[] Bytes = Array.Empty<byte>();
+        public string Error = string.Empty;
+
+        public GifEncodeJob(int generation, List<Image> frames)
+        {
+            Generation = generation;
+            Frames = frames;
+        }
+    }
+
     public void Awake()
     {
         instance = this;
-
         DiscordBotPlugin.LogDebug("Initializing GIF recorder");
     }
 
@@ -49,81 +63,122 @@ public class Recorder : MonoBehaviour
 
     private void StopAndRestoreHud()
     {
+        generation++;
+
         if (recordingCoroutine != null)
         {
             StopCoroutine(recordingCoroutine);
             recordingCoroutine = null;
         }
 
+        if (waitCoroutine != null)
+        {
+            StopCoroutine(waitCoroutine);
+            waitCoroutine = null;
+        }
+
         isRecording = false;
+        isProcessing = false;
         Screenshot.instance?.ShowHud();
     }
 
     public void StartRecording(string player, string quip, string avatar)
     {
-        if (isRecording) return;
+        if (isRecording || isProcessing) return;
+
         playerName = player;
         message = quip;
         thumbnail = avatar;
         isRecording = true;
         recordStartTime = Time.time;
-        if (recordingCoroutine != null) StopCoroutine(recordingCoroutine);
-        recordingCoroutine = StartCoroutine(Record());
+        int currentGeneration = ++generation;
+        recordingCoroutine = StartCoroutine(Record(currentGeneration));
         DiscordBotPlugin.LogDebug("Starting gif recording");
     }
 
-    private IEnumerator Record()
+    private IEnumerator Record(int currentGeneration)
     {
+        List<Image> frames = new();
         Screenshot.instance?.HideHud();
-        float interval = 1f / fps;
+        float interval = 1f / Math.Max(1, fps);
 
         try
         {
-            while (isRecording && Time.time - recordStartTime < recordDuration)
+            while (isRecording && currentGeneration == generation && Time.time - recordStartTime < recordDuration)
             {
                 yield return new WaitForEndOfFrame();
-                Image img = new Image(ScreenCapture.CaptureScreenshotAsTexture());
-                recordedImages.Add(img);
+
+                Texture2D? texture = null;
+                try
+                {
+                    texture = ScreenCapture.CaptureScreenshotAsTexture();
+                    if (texture != null) frames.Add(new Image(texture));
+                }
+                finally
+                {
+                    if (texture != null) Destroy(texture);
+                }
+
                 yield return new WaitForSeconds(interval);
             }
         }
         finally
         {
-            isRecording = false;
             recordingCoroutine = null;
             Screenshot.instance?.ShowHud();
         }
 
-        if (recordedImages.Count == 0)
+        if (currentGeneration != generation)
         {
-            DiscordBotPlugin.LogWarning("GIF recording captured no frames");
-            Cleanup();
             yield break;
         }
 
-        Thread thread = new Thread(CreateGif) { IsBackground = true };
+        isRecording = false;
+        if (frames.Count == 0)
+        {
+            DiscordBotPlugin.LogWarning("GIF recording captured no frames");
+            yield break;
+        }
+
+        isProcessing = true;
+        GifEncodeJob job = new(currentGeneration, frames);
+        Thread thread = new(() => CreateGif(job)) { IsBackground = true };
         thread.Start();
-        StartCoroutine(WaitForBytes());
+        waitCoroutine = StartCoroutine(WaitForJob(job));
     }
 
-    private IEnumerator WaitForBytes()
+    private IEnumerator WaitForJob(GifEncodeJob job)
     {
-        while (gifBytes == null) yield return null;
-        SendGif(gifBytes);
-        Cleanup();
+        while (!job.Completed && job.Generation == generation) yield return null;
+
+        if (job.Generation != generation)
+        {
+            yield break;
+        }
+
+        waitCoroutine = null;
+        isProcessing = false;
+
+        if (!string.IsNullOrWhiteSpace(job.Error))
+        {
+            DiscordBotPlugin.LogError($"Failed to create death GIF: {job.Error}");
+            yield break;
+        }
+
+        SendGif(job.Bytes);
     }
 
     public void Cleanup()
     {
-        recordedImages.Clear();
-        gifBytes = null;
+        isRecording = false;
+        isProcessing = false;
     }
 
-    private void CreateGif()
+    private static void CreateGif(GifEncodeJob job)
     {
         try
         {
-            GIFEncoder encoder = new GIFEncoder
+            GIFEncoder encoder = new()
             {
                 useGlobalColorTable = true,
                 repeat = 0,
@@ -132,33 +187,38 @@ public class Recorder : MonoBehaviour
                 dispose = 1
             };
 
-            using MemoryStream stream = new MemoryStream();
+            using MemoryStream stream = new();
             encoder.Start(stream);
-            foreach (Image img in recordedImages)
+            foreach (Image image in job.Frames)
             {
-                img.ResizeBilinear(gifWidth, gifHeight);
-                img.Flip();
-                encoder.AddFrame(img);
+                image.ResizeBilinear(gifWidth, gifHeight);
+                image.Flip();
+                encoder.AddFrame(image);
             }
+
             encoder.Finish();
-            gifBytes = stream.ToArray();
+            job.Bytes = stream.ToArray();
         }
         catch (Exception ex)
         {
-            DiscordBotPlugin.LogError($"Failed to create death GIF: {ex.Message}");
-            gifBytes = Array.Empty<byte>();
+            job.Error = ex.Message;
+        }
+        finally
+        {
+            job.Completed = true;
         }
     }
 
-    private void SendGif(byte[]? bytes)
+    private void SendGif(byte[] bytes)
     {
-        if (bytes == null || bytes.Length == 0)
+        if (bytes.Length == 0)
         {
-            DiscordBotPlugin.LogWarning("GIF bytes are null or empty");
+            DiscordBotPlugin.LogWarning("GIF bytes are empty");
             return;
         }
+
         Discord.instance?.SendGifMessage(Webhook.DeathFeed, playerName, message, bytes, $"{DateTime.UtcNow:yyyyMMdd_HHmmss}.gif", thumbnail: thumbnail);
-        var worldName = ZNet.instance?.GetWorldName() ?? "Server";
+        string worldName = ZNet.instance?.GetWorldName() ?? "Server";
         Discord.instance?.Internal_BroadcastMessage(worldName, message, false);
     }
 }
