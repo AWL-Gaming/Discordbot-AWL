@@ -1,10 +1,14 @@
 # Thunderstore publishing
 
-## Permission requirement
+## Current publication status
 
-The original RustyMods repository does not currently include a license file. Before publishing this fork or its compiled DLL publicly, obtain explicit written redistribution permission from RustyMods. Keep that permission with the release records.
+DiscordBot_AWL is published under the **AWLGaming** Thunderstore namespace:
 
-Do not publish under the original RustyMods namespace or imply that RustyMods maintains the AWL fork.
+https://thunderstore.io/c/valheim/p/AWLGaming/DiscordBot_AWL/
+
+It is an unofficial community-maintained fork of RustyMods' DiscordBot. Do not publish it under the RustyMods namespace or imply that RustyMods maintains, endorses, or supports the AWL fork.
+
+The upstream repository did not contain a license file or explicit redistribution terms when this fork was created and first published. Keep `NOTICE.md` in every public source and binary release so the original authorship, fork status, and licensing ambiguity remain transparent. Preserve any later written permission or upstream license information with the release records.
 
 ## Package build
 
@@ -14,7 +18,7 @@ Set-Location -LiteralPath C:\path\to\Discordbot-AWL
 .\scripts\Test-ThunderstorePackage.ps1
 ```
 
-The generated zip is `Thunderstore\DiscordBot_v1.4.0.zip` for this release. Its root contains:
+The generated ZIP contains:
 
 - `manifest.json`
 - `README.md`
@@ -23,15 +27,18 @@ The generated zip is `Thunderstore\DiscordBot_v1.4.0.zip` for this release. Its 
 - `NOTICE.md`
 - `DiscordBot.dll`
 
-## Upload through Thunderstore
+## Uploading an update
 
-1. Sign in to Thunderstore with the account that owns the intended team namespace.
-2. Open the Valheim community.
-3. Choose **Upload package**.
-4. Select the generated zip.
-5. Select the AWL team namespace, not RustyMods.
-6. Select the appropriate Valheim categories.
-7. Review the rendered README, dependencies, package name, version, and attribution.
-8. Publish only after the permission requirement above is satisfied.
+Thunderstore package versions are immutable. Changes to the icon, README, NOTICE, DLL, or other package files require a new version.
 
-For later releases, increment `DiscordBotPlugin.ModVersion`, update `Thunderstore/CHANGELOG.md`, rebuild, validate, then upload the newly versioned zip. Thunderstore versions are immutable, so a broken upload requires another version number.
+1. Increment `DiscordBotPlugin.ModVersion` and `Thunderstore/manifest.json` using semantic versioning.
+2. Update `Thunderstore/CHANGELOG.md`.
+3. Rebuild with `scripts/Build-Release.ps1`.
+4. Validate with `scripts/Test-ThunderstorePackage.ps1`.
+5. Sign in to Thunderstore with an account that belongs to the AWLGaming team.
+6. Open the Valheim community and choose **Upload package**.
+7. Select the newly generated ZIP.
+8. Upload it under the same **AWLGaming** team and keep the package name `DiscordBot_AWL` unchanged.
+9. Review the rendered README, dependencies, package name, version, icon, and attribution before publishing.
+
+For an icon and notice-only update after `1.4.0`, publish `1.4.1`.
