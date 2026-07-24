@@ -1,3 +1,22 @@
+# 1.4.4
+
+- Replaced unpaced attachment uploads with acknowledged 16 KiB chunks and bounded retries.
+- Added explicit transfer aborts and duplicate-safe completion handling so lost acknowledgements cannot duplicate Discord posts or block a fallback transfer.
+- Added a bounded client attachment queue to process rapid deaths sequentially without saturating Steam networking.
+- Added adaptive GIF re-encoding with progressively lower resolution and frame density when the configured GIF exceeds 8 MiB.
+- Added a representative PNG frame fallback when GIF encoding or transport fails; text-only fallback is now the last resort.
+- Added exact client/server diagnostics for encoded size, transfer profile, progress, timeout, retry, abort, and fallback reasons.
+- Changed packaged documentation links to absolute AWL Gaming GitHub URLs so they work correctly from Thunderstore.
+
+# 1.4.3
+
+- Prevented truncated, malformed, generic, markdown-wrapped, or planning-style AI fragments from being sent to Discord.
+- Added natural finish-reason enforcement and a final quality gate before any AI quip is accepted.
+- Added minimal-thinking Gemini generation for death and day quips, preserving output tokens for the actual message.
+- Added exact server-controlled player-name and day-number substitution through `{PLAYER}` and `{DAY}` tokens.
+- Added contextual source-quips to the server AI broker while preserving server-side death verification and secret isolation.
+- Added automatic fallback to the trusted local quip when AI generation fails validation, times out, or exhausts providers.
+- Added optional multi-provider candidate comparison with bounded provider count and deterministic quality scoring.
 # 1.4.2
 
 - Fixed client disconnects after death by replacing oversized single-packet GIF/PNG broker uploads with bounded 24 KiB chunks.

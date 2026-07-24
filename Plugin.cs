@@ -70,7 +70,7 @@ public enum ChatDisplay { Player, Bot }
 public class DiscordBotPlugin : BaseUnityPlugin
 {
     internal const string ModName = "DiscordBot";
-    internal const string ModVersion = "1.4.2";
+    internal const string ModVersion = "1.4.4";
     internal const string Author = "RustyMods";
     private const string ModGUID = Author + "." + ModName;
     private const string ConfigFileName = ModGUID + ".cfg";
@@ -169,6 +169,8 @@ public class DiscordBotPlugin : BaseUnityPlugin
     private static ConfigEntry<int> m_aiRemoteResponseTimeoutSeconds = null!;
     private static ConfigEntry<Toggle> m_serverAIBroker = null!;
     private static ConfigEntry<Toggle> m_allowPlayerAIPrompts = null!;
+    private static ConfigEntry<Toggle> m_compareQuipProviders = null!;
+    private static ConfigEntry<int> m_quipProviderCandidates = null!;
     #endregion
 
     private static ConfigEntry<Toggle> m_enableJobs = null!;
@@ -221,6 +223,8 @@ public class DiscordBotPlugin : BaseUnityPlugin
     public static bool OpenRouterFreeOnly => m_openRouterFreeOnly.Value is Toggle.On;
     public static bool ServerAIBrokerEnabled => m_serverAIBroker.Value is Toggle.On;
     public static bool AllowPlayerAIPrompts => m_allowPlayerAIPrompts.Value is Toggle.On;
+    public static bool CompareQuipProviders => m_compareQuipProviders.Value is Toggle.On;
+    public static int QuipProviderCandidates => Math.Max(1, Math.Min(4, m_quipProviderCandidates.Value));
     public static int AIMaxAttempts => Math.Max(1, m_aiMaxAttempts.Value);
     public static int AIModelsPerProvider => Math.Max(1, m_aiModelsPerProvider.Value);
     public static int AIRequestTimeoutSeconds => Math.Max(1, m_aiRequestTimeoutSeconds.Value);
@@ -233,6 +237,11 @@ public class DiscordBotPlugin : BaseUnityPlugin
     public static void LogWarning(string message)
     {
         records.Log(LogLevel.Warning, message);
+    }
+
+    public static void LogInfo(string message)
+    {
+        records.Log(LogLevel.Info, message);
     }
 
     public static void LogDebug(string message)
@@ -520,6 +529,8 @@ public class DiscordBotPlugin : BaseUnityPlugin
         m_aiRemoteResponseTimeoutSeconds = config("8 - AI", "Remote Response Timeout Seconds", 120, "Maximum time a client waits for a server AI broker response.", false);
         m_serverAIBroker = config("8 - AI", "Server AI Broker", Toggle.On, "Execute client death/day quip AI requests on the server without exposing API keys.", false);
         m_allowPlayerAIPrompts = config("8 - AI", "Allow Player AI Prompts", Toggle.Off, "Allow manual in-game player prompts through the server AI broker. Automatic death/day quips remain allowed.", false);
+        m_compareQuipProviders = config("8 - AI", "Compare Quip Providers", Toggle.Off, "When enabled, collect one quality-approved quip from multiple configured providers and use the highest-scoring result. This increases API usage and latency.", false);
+        m_quipProviderCandidates = config("8 - AI", "Quip Provider Candidates", 2, "Maximum number of different providers compared for each death or day quip when Compare Quip Providers is enabled.", false);
         m_chatGPTAPIKEY.SettingChanged += (_, _) => UpdateServerAIKeys();
         m_geminiAPIKEY.SettingChanged += (_, _) => UpdateServerAIKeys();
         m_deepSeekAPIKEY.SettingChanged += (_, _) => UpdateServerAIKeys();

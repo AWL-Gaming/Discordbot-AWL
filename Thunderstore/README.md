@@ -2,19 +2,16 @@
 
 AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://github.com/RustyMods/DiscordBot). It preserves the existing two-way Valheim and Discord integration while adding resilient AI model discovery, ordered provider/model failover, and safer client capture cleanup.
 
-Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](NOTICE.md).
+Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/NOTICE.md).
 
-## AWL 1.4.2 highlights
+## AWL 1.4.4 highlights
 
-- Gemini model discovery through Google's model catalog, with configured models filtered against what the current API key can actually use.
-- OpenRouter account-aware model discovery, optional free-only filtering, and ordered model failover.
-- Provider failover across Gemini, OpenRouter, OpenAI, and DeepSeek.
-- Server-side AI broker for automatic death/day quips without synchronizing API keys to clients.
-- Server-side Discord webhook broker, so webhook URLs remain on the dedicated server and are never synchronized to clients.
-- Retired Gemini model filtering, including automatic removal of `gemini-2.5-flash` from the request plan.
-- Per-request timeout, attempt limits, credential-error short-circuiting, and client broker response timeout.
-- Death GIF and screenshot capture now restore the HUD if recording is interrupted or the component is disabled.
-- Reproducible release build and Thunderstore package validation scripts.
+- Replaced fire-and-forget death attachment uploads with acknowledged 16 KiB chunks, bounded retries, explicit aborts, and duplicate-safe completion handling.
+- Added a bounded client attachment queue so rapid deaths are processed sequentially instead of flooding Steam networking.
+- Added adaptive GIF encoding that automatically reduces resolution and frame density when a configured GIF would exceed the 8 MiB safety ceiling.
+- Added a representative PNG frame as the attachment fallback when GIF encoding or transport cannot complete, with text-only fallback used only if both image paths fail.
+- Added exact client and server diagnostics for encoded size, selected adaptive profile, acknowledged transfer progress, retry reason, timeout, abort, and fallback selection.
+- Preserved the 1.4.3 guarded quip generation, exact player/day substitution, provider failover, server-side secret brokering, and optional multi-provider quality comparison.
 
 ## Prerequisites
 
@@ -415,9 +412,9 @@ interval: 3600
 
 ## Development and packaging
 
-- [BUILDING.md](BUILDING.md) contains the reproducible Windows build and validation commands.
-- [PUBLISHING.md](PUBLISHING.md) contains the Thunderstore package/upload procedure and the required upstream permission warning.
-- [NOTICE.md](NOTICE.md) records original-author attribution and redistribution status.
+- [BUILDING.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/BUILDING.md) contains the reproducible Windows build and validation commands.
+- [PUBLISHING.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/PUBLISHING.md) contains the Thunderstore package/upload procedure and the required upstream permission warning.
+- [NOTICE.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/NOTICE.md) records original-author attribution and redistribution status.
 
 ### Notes
 

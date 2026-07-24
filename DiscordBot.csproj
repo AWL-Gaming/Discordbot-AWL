@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
     <Import Project="environment.props" />
@@ -145,6 +145,8 @@
         <Compile Include="LocalizationManager.cs" />
         <Compile Include="Plugin.cs" />
         <Compile Include="Properties\AssemblyInfo.cs" />
+        <Compile Include="src\AIQuipQuality.cs" />
+ <Compile Include="src\SizeFormatter.cs" />
         <Compile Include="src\Behaviors\ChatAI.cs" />
         <Compile Include="src\Behaviors\Discord.cs" />
         <Compile Include="src\Behaviors\DiscordGateway.cs" />
@@ -247,6 +249,7 @@
         <ParameterGroup>
             <ManifestFile ParameterType="System.String" Required="true" />
             <AssemblyName ParameterType="System.String" Required="true" />
+            <PackageVersion ParameterType="System.String" Required="true" />
         </ParameterGroup>
         <Task>
             <Code Type="Fragment" Language="cs">
@@ -255,7 +258,7 @@ if (!System.IO.File.Exists(ManifestFile))
 {
 string content = @"{
   ""name"": """ + AssemblyName + @""",
-  ""version_number"": ""1.0.0"",
+  ""version_number"": """ + PackageVersion + @""",
   ""website_url"": ""https://discord.gg/pdHgy6Bsng"",
   ""description"": ""Your mod description goes here. Do not forget to replace the icon.png file with your own. Must be 256x256. Your Readme.md file will be copied from the one in your project folder."",
   ""dependencies"": [
@@ -270,7 +273,7 @@ System.IO.File.WriteAllText(ManifestFile, content);
         </Task>
     </UsingTask>
     <Target Name="UpdateManifestVersion" AfterTargets="CopyReadmeToTSFolder" Condition=" ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT') ">
-        <WriteManifestFile ManifestFile="$(ProjectDir)Thunderstore\manifest.json" AssemblyName="$(AssemblyName)" />
+        <WriteManifestFile ManifestFile="$(ProjectDir)Thunderstore\manifest.json" AssemblyName="$(AssemblyName)" PackageVersion="$(PackageVersion)" />
         <ItemGroup>
             <ManifestFile Include="$(ProjectDir)Thunderstore\manifest.json" />
         </ItemGroup>
