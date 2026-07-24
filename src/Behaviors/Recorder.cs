@@ -22,6 +22,7 @@ public class Recorder : MonoBehaviour
     private int generation;
     private Coroutine? recordingCoroutine;
     private Coroutine? waitCoroutine;
+
     private static int gifHeight => DiscordBotPlugin.GifResolution.height;
     private static int gifWidth => DiscordBotPlugin.GifResolution.width;
     private static int fps => DiscordBotPlugin.GIF_FPS;
@@ -29,18 +30,40 @@ public class Recorder : MonoBehaviour
 
     public static Recorder? instance;
 
+    private sealed class GifEncodingProfile
+    {
+        public readonly int Width;
+        public readonly int Height;
+        public readonly int FrameStep;
+        public readonly int FramesPerSecond;
+        public readonly string Label;
+
+        public GifEncodingProfile(int width, int height, int frameStep, int framesPerSecond, string label)
+        {
+            Width = width;
+            Height = height;
+            FrameStep = frameStep;
+            FramesPerSecond = framesPerSecond;
+            Label = label;
+        }
+    }
+
     private sealed class GifEncodeJob
     {
         public readonly int Generation;
         public readonly List<Image> Frames;
+        public readonly Image FallbackFrame;
+        public readonly List<string> Diagnostics = new();
         public volatile bool Completed;
         public byte[] Bytes = Array.Empty<byte>();
+        public string SelectedProfile = string.Empty;
         public string Error = string.Empty;
 
         public GifEncodeJob(int generation, List<Image> frames)
         {
             Generation = generation;
             Frames = frames;
+            FallbackFrame = CloneImage(frames[frames.Count / 2]);
         }
     }
 
@@ -84,7 +107,11 @@ public class Recorder : MonoBehaviour
 
     public void StartRecording(string player, string quip, string avatar)
     {
-        if (isRecording || isProcessing) return;
+        if (isRecording || isProcessing)
+        {
+            DiscordBotPlugin.LogWarning("Skipped death GIF capture because another capture is still active");
+            return;
+        }
 
         playerName = player;
         message = quip;
@@ -93,7 +120,8 @@ public class Recorder : MonoBehaviour
         recordStartTime = Time.time;
         int currentGeneration = ++generation;
         recordingCoroutine = StartCoroutine(Record(currentGeneration));
-        DiscordBotPlugin.LogDebug("Starting gif recording");
+        DiscordBotPlugin.LogDebug(
+            $"Starting death GIF recording at {gifWidth}x{gifHeight}, {fps} FPS for {recordDuration:0.##} seconds");
     }
 
     private IEnumerator Record(int currentGeneration)
@@ -116,7 +144,7 @@ public class Recorder : MonoBehaviour
                 }
                 finally
                 {
-                    if (texture != null) Destroy(texture);
+                    if (texture != null) UnityEngine.Object.Destroy(texture);
                 }
 
                 yield return new WaitForSeconds(interval);
@@ -136,7 +164,8 @@ public class Recorder : MonoBehaviour
         isRecording = false;
         if (frames.Count == 0)
         {
-            DiscordBotPlugin.LogWarning("GIF recording captured no frames");
+            DiscordBotPlugin.LogWarning("GIF recording captured no frames; sending a text-only death notice");
+            SendTextOnlyFallback("GIF recording captured no frames");
             yield break;
         }
 
@@ -159,45 +188,76 @@ public class Recorder : MonoBehaviour
         waitCoroutine = null;
         isProcessing = false;
 
+        foreach (string diagnostic in job.Diagnostics)
+        {
+            DiscordBotPlugin.LogWarning(diagnostic);
+        }
+
+        byte[] fallbackPng = CreateFallbackPng(job.FallbackFrame);
+        if (fallbackPng.Length > 0)
+        {
+            DiscordBotPlugin.LogDebug($"Prepared death PNG fallback with {FormatBytes(fallbackPng.Length)}");
+        }
+
         if (!string.IsNullOrWhiteSpace(job.Error))
         {
             DiscordBotPlugin.LogError($"Failed to create death GIF: {job.Error}");
+            if (fallbackPng.Length > 0)
+            {
+                SendPngFallback(fallbackPng, "GIF encoder failure");
+            }
+            else
+            {
+                SendTextOnlyFallback("GIF encoder and PNG fallback both failed");
+            }
             yield break;
         }
 
-        SendGif(job.Bytes);
+        if (job.Bytes.Length == 0)
+        {
+            if (fallbackPng.Length > 0)
+            {
+                SendPngFallback(fallbackPng, "all adaptive GIF encodes exceeded the 8 MiB transport limit");
+            }
+            else
+            {
+                SendTextOnlyFallback("all adaptive GIF encodes exceeded the limit and PNG fallback failed");
+            }
+            yield break;
+        }
+
+        SendGif(job.Bytes, fallbackPng, job.SelectedProfile);
     }
 
     public void Cleanup()
     {
-        isRecording = false;
-        isProcessing = false;
+        StopAndRestoreHud();
     }
 
     private static void CreateGif(GifEncodeJob job)
     {
         try
         {
-            GIFEncoder encoder = new()
+            List<GifEncodingProfile> profiles = BuildEncodingProfiles();
+            foreach (GifEncodingProfile profile in profiles)
             {
-                useGlobalColorTable = true,
-                repeat = 0,
-                FPS = fps,
-                transparent = new Color32(255, 0, 255, 255),
-                dispose = 1
-            };
+                byte[] bytes = EncodeGif(job.Frames, profile);
+                string diagnostic =
+                    $"Encoded death GIF using {profile.Label}: {profile.Width}x{profile.Height}, " +
+                    $"every {profile.FrameStep} frame(s), {profile.FramesPerSecond} FPS, {FormatBytes(bytes.Length)}";
 
-            using MemoryStream stream = new();
-            encoder.Start(stream);
-            foreach (Image image in job.Frames)
-            {
-                image.ResizeBilinear(gifWidth, gifHeight);
-                image.Flip();
-                encoder.AddFrame(image);
+                if (bytes.Length <= Discord.RemoteAttachmentSafetyBytes)
+                {
+                    DiscordBotPlugin.LogDebug(diagnostic);
+                    job.Bytes = bytes;
+                    job.SelectedProfile = profile.Label;
+                    return;
+                }
+
+                job.Diagnostics.Add(diagnostic);
+                job.Diagnostics.Add(
+                    $"Death GIF profile {profile.Label} exceeded the {FormatBytes(Discord.RemoteAttachmentSafetyBytes)} safety limit; retrying with a smaller profile");
             }
-
-            encoder.Finish();
-            job.Bytes = stream.ToArray();
         }
         catch (Exception ex)
         {
@@ -209,16 +269,182 @@ public class Recorder : MonoBehaviour
         }
     }
 
-    private void SendGif(byte[] bytes)
+    private static List<GifEncodingProfile> BuildEncodingProfiles()
+    {
+        List<GifEncodingProfile> profiles = new();
+        AddEncodingProfile(profiles, gifWidth, gifHeight, 1, Math.Max(1, fps), "configured GIF");
+        AddEncodingProfile(profiles, ScaleDimension(gifWidth, 0.75f), ScaleDimension(gifHeight, 0.75f), 2, Math.Max(8, fps / 2), "adaptive GIF level 1");
+        AddEncodingProfile(profiles, ScaleDimension(gifWidth, 0.5f), ScaleDimension(gifHeight, 0.5f), 3, Math.Max(6, fps / 3), "adaptive GIF level 2");
+        AddEncodingProfile(profiles, ScaleDimension(gifWidth, 0.375f), ScaleDimension(gifHeight, 0.375f), 4, Math.Max(5, fps / 4), "adaptive GIF level 3");
+        return profiles;
+    }
+
+    private static void AddEncodingProfile(
+        List<GifEncodingProfile> profiles,
+        int width,
+        int height,
+        int frameStep,
+        int framesPerSecond,
+        string label)
+    {
+        width = Math.Max(160, width);
+        height = Math.Max(90, height);
+        if (profiles.Exists(profile =>
+                profile.Width == width &&
+                profile.Height == height &&
+                profile.FrameStep == frameStep))
+        {
+            return;
+        }
+
+        profiles.Add(new GifEncodingProfile(width, height, frameStep, framesPerSecond, label));
+    }
+
+    private static byte[] EncodeGif(List<Image> frames, GifEncodingProfile profile)
+    {
+        GIFEncoder encoder = new()
+        {
+            useGlobalColorTable = true,
+            repeat = 0,
+            FPS = profile.FramesPerSecond,
+            transparent = new Color32(255, 0, 255, 255),
+            dispose = 1
+        };
+
+        using MemoryStream stream = new();
+        encoder.Start(stream);
+        int addedFrames = 0;
+        for (int index = 0; index < frames.Count; index += profile.FrameStep)
+        {
+            Image image = CloneImage(frames[index]);
+            image.ResizeBilinear(profile.Width, profile.Height);
+            image.Flip();
+            encoder.AddFrame(image);
+            addedFrames++;
+        }
+
+        if (addedFrames == 0)
+        {
+            throw new InvalidOperationException("No frames were available for GIF encoding");
+        }
+
+        encoder.Finish();
+        return stream.ToArray();
+    }
+
+    private static Image CloneImage(Image image)
+    {
+        return new Image((Color32[])image.pixels.Clone(), image.width, image.height);
+    }
+
+    private static int ScaleDimension(int value, float scale)
+    {
+        return Math.Max(2, Mathf.RoundToInt(value * scale));
+    }
+
+    private static byte[] CreateFallbackPng(Image source)
+    {
+        Texture2D? texture = null;
+        try
+        {
+            Image image = CloneImage(source);
+            GetFittedDimensions(image.width, image.height, 960, 540, out int width, out int height);
+            image.ResizeBilinear(width, height);
+            image.Flip();
+
+            texture = new Texture2D(width, height, TextureFormat.RGB24, false);
+            texture.SetPixels32(image.pixels);
+            texture.Apply();
+            return texture.EncodeToPNG() ?? Array.Empty<byte>();
+        }
+        catch (Exception ex)
+        {
+            DiscordBotPlugin.LogWarning($"Failed to create death PNG fallback: {ex.Message}");
+            return Array.Empty<byte>();
+        }
+        finally
+        {
+            if (texture != null) UnityEngine.Object.Destroy(texture);
+        }
+    }
+
+    private static void GetFittedDimensions(
+        int sourceWidth,
+        int sourceHeight,
+        int maximumWidth,
+        int maximumHeight,
+        out int width,
+        out int height)
+    {
+        float scale = Math.Min(1f, Math.Min((float)maximumWidth / sourceWidth, (float)maximumHeight / sourceHeight));
+        width = Math.Max(2, Mathf.RoundToInt(sourceWidth * scale));
+        height = Math.Max(2, Mathf.RoundToInt(sourceHeight * scale));
+    }
+
+    private void SendGif(byte[] bytes, byte[] fallbackPng, string profile)
     {
         if (bytes.Length == 0)
         {
             DiscordBotPlugin.LogWarning("GIF bytes are empty");
+            if (fallbackPng.Length > 0) SendPngFallback(fallbackPng, "empty GIF output");
+            else SendTextOnlyFallback("empty GIF output and PNG fallback unavailable");
             return;
         }
 
-        Discord.instance?.SendGifMessage(Webhook.DeathFeed, playerName, message, bytes, $"{DateTime.UtcNow:yyyyMMdd_HHmmss}.gif", thumbnail: thumbnail);
+        string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+        DiscordBotPlugin.LogDebug(
+            $"Sending death GIF using {profile} with {FormatBytes(bytes.Length)} and a {FormatBytes(fallbackPng.Length)} PNG fallback");
+        Discord.instance?.SendGifMessage(
+            Webhook.DeathFeed,
+            playerName,
+            message,
+            bytes,
+            $"{timestamp}.gif",
+            thumbnail: thumbnail,
+            fallbackPng: fallbackPng,
+            fallbackFilename: $"{timestamp}.png",
+            transferLabel: profile);
+        BroadcastQuip();
+    }
+
+    private void SendPngFallback(byte[] bytes, string reason)
+    {
+        if (bytes.Length == 0)
+        {
+            SendTextOnlyFallback($"PNG fallback was empty after {reason}");
+            return;
+        }
+
+        DiscordBotPlugin.LogWarning(
+            $"Sending death PNG fallback because {reason}; encoded size is {FormatBytes(bytes.Length)}");
+        Discord.instance?.SendImageMessage(
+            Webhook.DeathFeed,
+            playerName,
+            message,
+            bytes,
+            $"{DateTime.UtcNow:yyyyMMdd_HHmmss}.png",
+            thumbnail: thumbnail,
+            transferLabel: $"PNG fallback: {reason}");
+        BroadcastQuip();
+    }
+
+    private void SendTextOnlyFallback(string reason)
+    {
+        DiscordBotPlugin.LogWarning($"Sending text-only death notice because {reason}");
+        Discord.instance?.SendEmbedMessage(Webhook.DeathFeed, playerName, message, thumbnail: thumbnail);
+        BroadcastQuip();
+    }
+
+    private void BroadcastQuip()
+    {
         string worldName = ZNet.instance?.GetWorldName() ?? "Server";
         Discord.instance?.Internal_BroadcastMessage(worldName, message, false);
+    }
+
+    private static string FormatBytes(int bytes)
+    {
+        if (bytes >= 1024 * 1024) return $"{bytes / (1024f * 1024f):0.00} MiB";
+        if (bytes >= 1024) return $"{bytes / 1024f:0.0} KiB";
+        return $"{bytes} bytes";
     }
 }
