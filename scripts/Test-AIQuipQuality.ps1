@@ -24,10 +24,10 @@ if ([string]::IsNullOrWhiteSpace($BepInExCorePath)) {
 if ([string]::IsNullOrWhiteSpace($ValheimManagedPath)) {
     $ValheimManagedPath = [Environment]::GetEnvironmentVariable('VALHEIM_MANAGED_PATH')
 }
-if ([string]::IsNullOrWhiteSpace($BepInExCorePath) -or -not (Test-Path -LiteralPath $BepInExCorePath)) {
+if ([string]::IsNullOrWhiteSpace($BepInExCorePath) -or -not (Test-Path -LiteralPath $BepInExCorePath -PathType Container)) {
     throw 'BepInEx core path is required. Pass -BepInExCorePath or set BEPINEX_CORE_PATH.'
 }
-if ([string]::IsNullOrWhiteSpace($ValheimManagedPath) -or -not (Test-Path -LiteralPath $ValheimManagedPath)) {
+if ([string]::IsNullOrWhiteSpace($ValheimManagedPath) -or -not (Test-Path -LiteralPath $ValheimManagedPath -PathType Container)) {
     throw 'Valheim managed path is required. Pass -ValheimManagedPath or set VALHEIM_MANAGED_PATH.'
 }
 
