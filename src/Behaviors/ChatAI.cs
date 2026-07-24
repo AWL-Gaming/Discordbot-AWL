@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using DiscordBot.Notices;
 using HarmonyLib;
 using JetBrains.Annotations;
@@ -510,8 +511,7 @@ public class ChatAI : MonoBehaviour
                 }
 
                 ConsumedDeathCharacters[rpc] = deathCharacterId;
-                string deathContext = SanitizeContext(request.context, 300);
-                deathContext = deathContext.Replace(AIQuipQuality.PlayerToken, deathPeer.m_playerName);
+                string deathContext = SanitizeRemoteContext(request.context, 300);
                 serverContext = AIRequestContext.Death(deathPeer.m_playerName, deathContext);
                 break;
 
@@ -530,8 +530,7 @@ public class ChatAI : MonoBehaviour
                 }
 
                 consumedDayQuip = currentDay;
-                string dayContext = SanitizeContext(request.context, 300);
-                dayContext = dayContext.Replace(AIQuipQuality.DayToken, currentDay.ToString(CultureInfo.InvariantCulture));
+                string dayContext = SanitizeRemoteContext(request.context, 300);
                 serverContext = AIRequestContext.Day(currentDay, dayContext);
                 break;
 
@@ -572,10 +571,33 @@ public class ChatAI : MonoBehaviour
         return EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds());
     }
 
-    private static string SanitizeContext(string value, int maxLength)
+    private static readonly string[] RemoteContextInstructionMarkers =
     {
-        string sanitized = value.Replace('\r', ' ').Replace('\n', ' ').Trim();
-        return sanitized.Length <= maxLength ? sanitized : sanitized.Substring(0, maxLength);
+        "ignore previous",
+        "ignore all",
+        "disregard previous",
+        "system:",
+        "developer:",
+        "assistant:",
+        "user:",
+        "instruction:",
+        "prompt:",
+        "respond with",
+        "output only",
+        "follow these"
+    };
+
+    private static string SanitizeRemoteContext(string value, int maxLength)
+    {
+        string sanitized = Regex.Replace(value ?? string.Empty, @"\{[^{}]{0,128}\}", " ");
+        sanitized = sanitized.Replace('\r', ' ').Replace('\n', ' ').Replace('\t', ' ');
+        foreach (string marker in RemoteContextInstructionMarkers)
+        {
+            sanitized = AIQuipQuality.ReplaceOrdinalIgnoreCase(sanitized, marker, " ");
+        }
+
+        sanitized = Regex.Replace(sanitized, @"\s+", " ").Trim();
+        return sanitized.Length <= maxLength ? sanitized : sanitized.Substring(0, maxLength).TrimEnd();
     }
 
     private static void SendRemoteResponse(ZRpc rpc, RemoteAIResponse response)
@@ -984,7 +1006,8 @@ public class ChatAI : MonoBehaviour
                     $"Gemini response {model}: finish={finishReason}; prompt={usage.promptTokenCount}; visible={usage.candidatesTokenCount}; thinking={usage.thoughtsTokenCount}; total={usage.totalTokenCount}; limit={maxOutputTokens}");
             }
 
-            completed(AIResult.Successful(reply, AIService.Gemini, response?.modelVersion ?? model));
+            string resolvedModel = string.IsNullOrWhiteSpace(response?.modelVersion) ? model : response!.modelVersion;
+            completed(AIResult.Successful(reply, AIService.Gemini, resolvedModel));
         }
         catch (Exception ex)
         {
@@ -1068,11 +1091,10 @@ public class ChatAI : MonoBehaviour
                 yield break;
             }
 
-            if (purpose != AIRequestPurpose.General &&
-                !string.Equals(finishReason, "stop", StringComparison.OrdinalIgnoreCase))
+            if (purpose != AIRequestPurpose.General && string.IsNullOrWhiteSpace(finishReason))
             {
-                completed(AIResult.Failure("Provider did not confirm a natural stop finish reason", provider, model));
-                yield break;
+                DiscordBotPlugin.LogWarning(
+                    $"{provider}/{model} omitted finish_reason; relying on the strict quip quality gate");
             }
 
             string? reply = choice?.message?.content?.Trim();

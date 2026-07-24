@@ -49,7 +49,8 @@ public static class OnDeath
             }
             else if (isGeneratingQuip)
             {
-                chatAI!.OnDeathQuip = message =>
+                chatAI!.OnDeathQuip = chatAI.HandleDeathQuip;
+                chatAI.OnDeathQuip += message =>
                 {
                     Discord.instance?.SendEmbedMessage(Webhook.DeathFeed, title, message, thumbnail: avatar);
                     string worldName = ZNet.instance?.GetWorldName() ?? "Server";

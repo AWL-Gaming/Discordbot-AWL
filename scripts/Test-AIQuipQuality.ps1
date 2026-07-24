@@ -1,6 +1,9 @@
 [CmdletBinding()]
 param(
-    [string]$AssemblyPath = ''
+    [string]$AssemblyPath = '',
+    [string]$BepInExCorePath = '',
+    [string]$ValheimManagedPath = '',
+    [string[]]$ReferencePath = @()
 )
 
 Set-StrictMode -Version Latest
@@ -15,14 +18,21 @@ if (-not (Test-Path -LiteralPath $AssemblyPath)) {
     throw "Assembly not found: $AssemblyPath"
 }
 
+if ([string]::IsNullOrWhiteSpace($BepInExCorePath)) {
+    $BepInExCorePath = Join-Path $env:APPDATA 'r2modmanPlus-local\Valheim\profiles\AWL Gaming Modpack ADMIN\BepInEx\core'
+}
+if ([string]::IsNullOrWhiteSpace($ValheimManagedPath)) {
+    $ValheimManagedPath = 'D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed'
+}
+
 $resolveDirs = @(
     (Split-Path -Parent (Resolve-Path -LiteralPath $AssemblyPath).Path),
-    (Join-Path $env:APPDATA 'r2modmanPlus-local\Valheim\profiles\AWL Gaming Modpack ADMIN\BepInEx\core'),
-    'D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed'
-)
+    $BepInExCorePath,
+    $ValheimManagedPath
+) + $ReferencePath
 
 $resolveHandler = [ResolveEventHandler]{
-    param($sender, $eventArgs)
+    param($_sender, $eventArgs)
 
     $fileName = ([Reflection.AssemblyName]$eventArgs.Name).Name + '.dll'
     foreach ($directory in $resolveDirs) {
@@ -88,13 +98,15 @@ try {
 
     $tests = @(
         @{ Name = 'Valid death quip'; Context = $deathContext; Candidate = '{PLAYER} tripped over fate; Odin stamped the paperwork for Valhalla.'; Expected = $true },
+        @{ Name = 'Lowercase player token'; Context = $deathContext; Candidate = '{player} tripped over fate; Odin stamped the paperwork for Valhalla.'; Expected = $true },
         @{ Name = 'Truncated Valk fragment'; Context = $deathContext; Candidate = ', Odin watching, Valk'; Expected = $false },
         @{ Name = 'Missing player token'; Context = $deathContext; Candidate = 'Odin watched another warrior stumble into Valhalla without reading the warning signs.'; Expected = $false },
         @{ Name = 'Repeated player token'; Context = $deathContext; Candidate = '{PLAYER} met Odin, and {PLAYER} immediately requested a less embarrassing saga.'; Expected = $false },
         @{ Name = 'Markdown wrapper'; Context = $deathContext; Candidate = '**{PLAYER} reached Valhalla while Odin pretended not to notice the landing.**'; Expected = $false },
         @{ Name = 'Model planning preamble'; Context = $deathContext; Candidate = 'Selecting the Best Option: {PLAYER} reached Valhalla while Odin reviewed the alternatives.'; Expected = $false },
         @{ Name = 'Missing Norse flavor'; Context = $deathContext; Candidate = '{PLAYER} fell down and learned a very ordinary lesson about gravity today.'; Expected = $false },
-        @{ Name = 'Valid day quip'; Context = $dayContext; Candidate = 'Day {DAY} dawns; Odin demands fresh axes and fewer excuses from every warrior.'; Expected = $true }
+        @{ Name = 'Valid day quip'; Context = $dayContext; Candidate = 'Day {DAY} dawns; Odin demands fresh axes and fewer excuses from every warrior.'; Expected = $true },
+        @{ Name = 'Bare day token rejected'; Context = $dayContext; Candidate = '{DAY} rises beneath Odin''s watch; every Viking prepares for another brutal morning.'; Expected = $false }
     )
 
     foreach ($test in $tests) {

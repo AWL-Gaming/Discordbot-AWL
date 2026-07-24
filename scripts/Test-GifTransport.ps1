@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $discordPath = Join-Path $repoRoot 'src\Behaviors\Discord.cs'
 $recorderPath = Join-Path $repoRoot 'src\Behaviors\Recorder.cs'
+$manifestPath = Join-Path $repoRoot 'Thunderstore\manifest.json'
 
 if (-not (Test-Path -LiteralPath $discordPath)) {
     throw "Source not found: $discordPath"
@@ -59,6 +60,11 @@ $requiredDiscord = [ordered]@{
     'ACK receiver' = 'RPC_WebhookAttachmentAck'
     'Abort receiver' = 'RPC_WebhookAttachmentAbort'
     'Bounded retries' = 'private const int RemoteAttachmentMaxRetries = 3;'
+    'Two-chunk ACK window' = 'private const int RemoteAttachmentChunkWindowSize = 2;'
+    'Keyed ACK table' = 'Dictionary<string, AttachmentAckWaitState>'
+    'Stable ACK codes' = 'AttachmentAckCode'
+    'Aggregate transfer memory cap' = 'private const int MaxConcurrentRemoteTransferBytes = 32 * 1024 * 1024;'
+    'Fresh server RPC lookup' = 'GetConnectedServerRpc'
     'Duplicate-safe completion cache' = 'RemoteWebhookCompletedTransfers'
     'PNG transport fallback' = 'fallbackMimeType: "image/png"'
     'Text-only last resort logging' = 'Sending text-only webhook fallback because'
@@ -88,7 +94,7 @@ Assert-NotContains -Content $discord -Needle 'WebhookBrokerProtocolVersion = 2' 
 Assert-NotContains -Content $discord -Needle 'ChunksPerFrame' -Name 'Frame-burst transport removed'
 Assert-NotContains -Content $discord -Needle 'package.Write(attachment)' -Name 'Full attachment is never written into one RPC package'
 
-$chunkWriteCount = ([regex]::Matches($discord, 'package\.Write\(chunk\);')).Count
+$chunkWriteCount = ([regex]::Matches($discord, 'package\.Write\(entry\.Data\);')).Count
 if ($chunkWriteCount -ne 1) {
     throw "Chunk writer count failed. Expected 1, got $chunkWriteCount."
 }
@@ -100,8 +106,11 @@ if ([string]::IsNullOrWhiteSpace($AssemblyPath)) {
 
 if (Test-Path -LiteralPath $AssemblyPath) {
     $version = [Reflection.AssemblyName]::GetAssemblyName((Resolve-Path -LiteralPath $AssemblyPath).Path).Version
-    if ($version -ne [Version]'1.4.4.0') {
-        throw "Assembly version failed. Expected 1.4.4.0, got $version."
+    if (-not (Test-Path -LiteralPath $manifestPath)) { throw "Manifest not found: $manifestPath" }
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $expectedVersion = [Version]("$($manifest.version_number).0")
+    if ($version -ne $expectedVersion) {
+        throw "Assembly version failed. Expected $expectedVersion, got $version."
     }
     Write-Output "PASS: Assembly version $version"
 }

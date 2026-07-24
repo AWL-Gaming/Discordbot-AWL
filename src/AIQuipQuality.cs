@@ -192,7 +192,7 @@ internal static class AIQuipQuality
         return
             "Write exactly one production-quality Valheim new-day announcement for Discord.\n" +
             "Output rules:\n" +
-            $"- Include the literal token {DayToken} exactly once as the day number. Never alter or replace that token.\n" +
+            $"- Include the exact phrase Day {DayToken} exactly once. Never alter or replace that token.\n" +
             "- Write one or two short sentences, 8 to 28 words total, and no more than 220 characters.\n" +
             "- Make it witty, energetic, and naturally Viking or Norse themed.\n" +
             "- Return plain text only. No markdown, labels, quotes, lists, alternatives, analysis, or preamble.\n" +
@@ -248,7 +248,17 @@ internal static class AIQuipQuality
                 return false;
             }
 
-            final = normalized.Replace(token, context.Replacement);
+            if (context.IsDayQuip &&
+                !Regex.IsMatch(
+                    normalized,
+                    $@"(?<![\p{{L}}\p{{N}}])Day\s+{Regex.Escape(token)}(?![\p{{L}}\p{{N}}])",
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            {
+                error = $"required phrase Day {token} was missing or altered";
+                return false;
+            }
+
+            final = ReplaceOrdinalIgnoreCase(normalized, token, context.Replacement);
         }
         else
         {
@@ -301,12 +311,13 @@ internal static class AIQuipQuality
 
         if (context.IsDayQuip && !string.IsNullOrWhiteSpace(context.Replacement))
         {
-            if (!Regex.IsMatch(
-                    normalized,
-                    $@"\bDay\s+{Regex.Escape(context.Replacement)}\b",
-                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            int dayCount = Regex.Matches(
+                normalized,
+                $@"(?<![\p{{L}}\p{{N}}]){Regex.Escape(context.Replacement)}(?![\p{{L}}\p{{N}}])",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Count;
+            if (dayCount != 1)
             {
-                error = "day number was missing or altered";
+                error = $"day number appeared {dayCount} times";
                 return false;
             }
         }
@@ -403,8 +414,15 @@ internal static class AIQuipQuality
 
     private static bool ContainsThemeTerm(string value)
     {
-        string lower = value.ToLowerInvariant();
-        return NorseTerms.Any(term => lower.Contains(term));
+        return NorseTerms.Any(term => ContainsWholeThemeTerm(value, term));
+    }
+
+    private static bool ContainsWholeThemeTerm(string value, string term)
+    {
+        return Regex.IsMatch(
+            value,
+            $@"(?<![\p{{L}}\p{{N}}]){Regex.Escape(term)}(?![\p{{L}}\p{{N}}])",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
 
@@ -415,7 +433,7 @@ internal static class AIQuipQuality
 
         score -= Math.Min(24, Math.Abs(wordCount - 17) * 2);
         score += sentenceCount == 1 ? 6 : 2;
-        score += Math.Min(12, NorseTerms.Count(term => lower.Contains(term)) * 3);
+        score += Math.Min(12, NorseTerms.Count(term => ContainsWholeThemeTerm(value, term)) * 3);
 
         if (value.EndsWith("!", StringComparison.Ordinal)) score += 2;
         if (lower.Contains("has died")) score -= 8;

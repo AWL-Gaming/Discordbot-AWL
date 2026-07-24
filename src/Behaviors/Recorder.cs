@@ -109,7 +109,11 @@ public class Recorder : MonoBehaviour
     {
         if (isRecording || isProcessing)
         {
-            DiscordBotPlugin.LogWarning("Skipped death GIF capture because another capture is still active");
+            SendTextOnlyFallback(
+                player,
+                quip,
+                avatar,
+                "another death capture is still recording or encoding");
             return;
         }
 
@@ -190,13 +194,20 @@ public class Recorder : MonoBehaviour
 
         foreach (string diagnostic in job.Diagnostics)
         {
-            DiscordBotPlugin.LogWarning(diagnostic);
+            if (diagnostic.IndexOf("exceeded", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                DiscordBotPlugin.LogWarning(diagnostic);
+            }
+            else
+            {
+                DiscordBotPlugin.LogInfo(diagnostic);
+            }
         }
 
         byte[] fallbackPng = CreateFallbackPng(job.FallbackFrame);
         if (fallbackPng.Length > 0)
         {
-            DiscordBotPlugin.LogDebug($"Prepared death PNG fallback with {FormatBytes(fallbackPng.Length)}");
+            DiscordBotPlugin.LogDebug($"Prepared death PNG fallback with {SizeFormatter.FormatBytes(fallbackPng.Length)}");
         }
 
         if (!string.IsNullOrWhiteSpace(job.Error))
@@ -217,7 +228,7 @@ public class Recorder : MonoBehaviour
         {
             if (fallbackPng.Length > 0)
             {
-                SendPngFallback(fallbackPng, "all adaptive GIF encodes exceeded the 8 MiB transport limit");
+                SendPngFallback(fallbackPng, $"all adaptive GIF encodes exceeded the {SizeFormatter.FormatBytes(Discord.RemoteAttachmentSafetyBytes)} transport limit");
             }
             else
             {
@@ -244,11 +255,11 @@ public class Recorder : MonoBehaviour
                 byte[] bytes = EncodeGif(job.Frames, profile);
                 string diagnostic =
                     $"Encoded death GIF using {profile.Label}: {profile.Width}x{profile.Height}, " +
-                    $"every {profile.FrameStep} frame(s), {profile.FramesPerSecond} FPS, {FormatBytes(bytes.Length)}";
+                    $"every {profile.FrameStep} frame(s), {profile.FramesPerSecond} FPS, {SizeFormatter.FormatBytes(bytes.Length)}";
 
                 if (bytes.Length <= Discord.RemoteAttachmentSafetyBytes)
                 {
-                    DiscordBotPlugin.LogDebug(diagnostic);
+                    job.Diagnostics.Add(diagnostic);
                     job.Bytes = bytes;
                     job.SelectedProfile = profile.Label;
                     return;
@@ -256,7 +267,7 @@ public class Recorder : MonoBehaviour
 
                 job.Diagnostics.Add(diagnostic);
                 job.Diagnostics.Add(
-                    $"Death GIF profile {profile.Label} exceeded the {FormatBytes(Discord.RemoteAttachmentSafetyBytes)} safety limit; retrying with a smaller profile");
+                    $"Death GIF profile {profile.Label} exceeded the {SizeFormatter.FormatBytes(Discord.RemoteAttachmentSafetyBytes)} safety limit; retrying with a smaller profile");
             }
         }
         catch (Exception ex)
@@ -392,8 +403,8 @@ public class Recorder : MonoBehaviour
         }
 
         string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-        DiscordBotPlugin.LogDebug(
-            $"Sending death GIF using {profile} with {FormatBytes(bytes.Length)} and a {FormatBytes(fallbackPng.Length)} PNG fallback");
+        DiscordBotPlugin.LogInfo(
+            $"Sending death GIF using {profile} with {SizeFormatter.FormatBytes(bytes.Length)} and a {SizeFormatter.FormatBytes(fallbackPng.Length)} PNG fallback");
         Discord.instance?.SendGifMessage(
             Webhook.DeathFeed,
             playerName,
@@ -416,7 +427,7 @@ public class Recorder : MonoBehaviour
         }
 
         DiscordBotPlugin.LogWarning(
-            $"Sending death PNG fallback because {reason}; encoded size is {FormatBytes(bytes.Length)}");
+            $"Sending death PNG fallback because {reason}; encoded size is {SizeFormatter.FormatBytes(bytes.Length)}");
         Discord.instance?.SendImageMessage(
             Webhook.DeathFeed,
             playerName,
@@ -430,21 +441,25 @@ public class Recorder : MonoBehaviour
 
     private void SendTextOnlyFallback(string reason)
     {
+        SendTextOnlyFallback(playerName, message, thumbnail, reason);
+    }
+
+    private static void SendTextOnlyFallback(string player, string quip, string avatar, string reason)
+    {
         DiscordBotPlugin.LogWarning($"Sending text-only death notice because {reason}");
-        Discord.instance?.SendEmbedMessage(Webhook.DeathFeed, playerName, message, thumbnail: thumbnail);
-        BroadcastQuip();
+        Discord.instance?.SendEmbedMessage(Webhook.DeathFeed, player, quip, thumbnail: avatar);
+        BroadcastQuip(quip);
     }
 
     private void BroadcastQuip()
     {
-        string worldName = ZNet.instance?.GetWorldName() ?? "Server";
-        Discord.instance?.Internal_BroadcastMessage(worldName, message, false);
+        BroadcastQuip(message);
     }
 
-    private static string FormatBytes(int bytes)
+    private static void BroadcastQuip(string content)
     {
-        if (bytes >= 1024 * 1024) return $"{bytes / (1024f * 1024f):0.00} MiB";
-        if (bytes >= 1024) return $"{bytes / 1024f:0.0} KiB";
-        return $"{bytes} bytes";
+        string worldName = ZNet.instance?.GetWorldName() ?? "Server";
+        Discord.instance?.Internal_BroadcastMessage(worldName, content, false);
     }
+
 }

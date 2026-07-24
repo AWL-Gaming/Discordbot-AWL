@@ -239,6 +239,11 @@ public class DiscordBotPlugin : BaseUnityPlugin
         records.Log(LogLevel.Warning, message);
     }
 
+    public static void LogInfo(string message)
+    {
+        records.Log(LogLevel.Info, message);
+    }
+
     public static void LogDebug(string message)
     {
         records.Log(LogLevel.Debug, message);

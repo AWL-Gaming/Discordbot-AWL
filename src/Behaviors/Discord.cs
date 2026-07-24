@@ -41,7 +41,9 @@ public class Discord : MonoBehaviour
     private const int MaxRemoteRequestsPerWindow = 12;
     private const int MaxRemoteAttachmentsPerWindow = 4;
     private const int MaxConcurrentRemoteTransfers = 8;
+    private const int MaxConcurrentRemoteTransferBytes = 32 * 1024 * 1024;
     private const int MaxQueuedRemoteAttachments = 4;
+    private const int RemoteAttachmentChunkWindowSize = 2;
     private const int RemoteAttachmentMaxRetries = 3;
     private const float RemoteRequestWindowSeconds = 10f;
     private const float RemoteAttachmentWindowSeconds = 30f;
@@ -57,7 +59,8 @@ public class Discord : MonoBehaviour
 
     private Coroutine? m_remoteAttachmentUpload;
     private readonly Queue<PendingRemoteAttachment> m_remoteAttachmentQueue = new();
-    private AttachmentAckWaitState? m_remoteAttachmentAckWait;
+    private readonly Dictionary<string, AttachmentAckWaitState> m_remoteAttachmentAckWaits =
+        new(StringComparer.Ordinal);
     private float m_nextRemoteTransferCleanup;
 
     private enum AttachmentAckStage
@@ -68,6 +71,17 @@ public class Discord : MonoBehaviour
         Abort
     }
 
+    private enum AttachmentAckCode
+    {
+        None = 0,
+        Accepted = 1,
+        Acknowledged = 2,
+        Completed = 3,
+        AlreadyCompleted = 4,
+        Aborted = 5,
+        Rejected = 100
+    }
+
     private sealed class AttachmentAckWaitState
     {
         public readonly string RequestId;
@@ -75,6 +89,7 @@ public class Discord : MonoBehaviour
         public readonly int ChunkIndex;
         public bool Received;
         public bool Success;
+        public AttachmentAckCode Code;
         public string Reason = string.Empty;
 
         public AttachmentAckWaitState(string requestId, AttachmentAckStage stage, int chunkIndex)
@@ -88,7 +103,23 @@ public class Discord : MonoBehaviour
     private sealed class RemoteUploadResult
     {
         public bool Success;
+        public AttachmentAckCode Code;
         public string Reason = string.Empty;
+    }
+
+    private sealed class PendingChunkSend
+    {
+        public readonly int ChunkIndex;
+        public readonly byte[] Data;
+        public int Attempts;
+        public bool Success;
+        public string Reason = string.Empty;
+
+        public PendingChunkSend(int chunkIndex, byte[] data)
+        {
+            ChunkIndex = chunkIndex;
+            Data = data;
+        }
     }
 
     private sealed class PendingRemoteAttachment
@@ -215,7 +246,7 @@ public class Discord : MonoBehaviour
         }
 
         m_remoteAttachmentQueue.Clear();
-        m_remoteAttachmentAckWait = null;
+        m_remoteAttachmentAckWaits.Clear();
         RemoteWebhookRequestTimes.Clear();
         RemoteWebhookAttachmentTimes.Clear();
         RemoteWebhookTransfers.Clear();
@@ -678,22 +709,37 @@ public class Discord : MonoBehaviour
             SanitizeTransferLabel(transferLabel));
         m_remoteAttachmentQueue.Enqueue(pending);
         DiscordBotPlugin.LogDebug(
-            $"Queued {pending.TransferLabel} webhook attachment with {FormatBytes(pending.Attachment.Length)}; " +
+            $"Queued {pending.TransferLabel} webhook attachment with {SizeFormatter.FormatBytes(pending.Attachment.Length)}; " +
             $"queue depth is {m_remoteAttachmentQueue.Count}");
 
         if (m_remoteAttachmentUpload == null)
         {
-            m_remoteAttachmentUpload = StartCoroutine(ProcessRemoteAttachmentQueue(serverRpc));
+            m_remoteAttachmentUpload = StartCoroutine(ProcessRemoteAttachmentQueue());
         }
     }
 
-    private IEnumerator ProcessRemoteAttachmentQueue(ZRpc serverRpc)
+    private IEnumerator ProcessRemoteAttachmentQueue()
     {
         try
         {
             while (m_remoteAttachmentQueue.Count > 0)
             {
                 PendingRemoteAttachment pending = m_remoteAttachmentQueue.Dequeue();
+                ZRpc? serverRpc = null;
+                float connectionDeadline = Time.realtimeSinceStartup + 15f;
+                while ((serverRpc = GetConnectedServerRpc()) == null &&
+                       Time.realtimeSinceStartup < connectionDeadline)
+                {
+                    yield return new WaitForSecondsRealtime(1f);
+                }
+
+                if (serverRpc == null)
+                {
+                    OnError?.Invoke(
+                        $"Dropped {pending.TransferLabel} because the server RPC did not reconnect within 15 seconds");
+                    continue;
+                }
+
                 byte[] selectedAttachment = pending.Attachment;
                 string selectedFilename = pending.Filename;
                 string selectedMimeType = pending.MimeType;
@@ -703,8 +749,8 @@ public class Discord : MonoBehaviour
                 if (selectedAttachment.Length > RemoteAttachmentSafetyBytes)
                 {
                     string reason =
-                        $"{selectedLabel} was {FormatBytes(selectedAttachment.Length)}, above the " +
-                        $"{FormatBytes(RemoteAttachmentSafetyBytes)} limit";
+                        $"{selectedLabel} was {SizeFormatter.FormatBytes(selectedAttachment.Length)}, above the " +
+                        $"{SizeFormatter.FormatBytes(RemoteAttachmentSafetyBytes)} limit";
                     if (CanUseFallbackAttachment(pending))
                     {
                         DiscordBotPlugin.LogWarning($"{reason}; switching to PNG fallback before transport");
@@ -736,9 +782,9 @@ public class Discord : MonoBehaviour
 
                 if (result.Success)
                 {
-                    DiscordBotPlugin.LogDebug(
+                    DiscordBotPlugin.LogInfo(
                         $"Completed acknowledged webhook transport for {selectedLabel} " +
-                        $"({FormatBytes(selectedAttachment.Length)})");
+                        $"({SizeFormatter.FormatBytes(selectedAttachment.Length)})");
                     continue;
                 }
 
@@ -750,44 +796,67 @@ public class Discord : MonoBehaviour
                     string fallbackLabel = $"PNG fallback: {fallbackReason}";
                     DiscordBotPlugin.LogWarning(
                         $"{fallbackReason}; retrying the death notice with " +
-                        $"{FormatBytes(pending.FallbackAttachment.Length)} PNG fallback");
+                        $"{SizeFormatter.FormatBytes(pending.FallbackAttachment.Length)} PNG fallback");
                     SetAttachmentReference(pending.Data, pending.FallbackFilename);
                     RemoteUploadResult fallbackResult = new();
-                    yield return UploadAttachmentToServer(
-                        serverRpc,
-                        pending.Webhook,
-                        pending.Route,
-                        pending.Data,
-                        pending.FallbackAttachment,
-                        pending.FallbackFilename,
-                        pending.FallbackMimeType,
-                        fallbackLabel,
-                        fallbackResult);
+                    serverRpc = GetConnectedServerRpc();
+                    if (serverRpc != null)
+                    {
+                        yield return UploadAttachmentToServer(
+                            serverRpc,
+                            pending.Webhook,
+                            pending.Route,
+                            pending.Data,
+                            pending.FallbackAttachment,
+                            pending.FallbackFilename,
+                            pending.FallbackMimeType,
+                            fallbackLabel,
+                            fallbackResult);
+                    }
+                    else
+                    {
+                        fallbackResult.Reason = "server connection closed before the PNG fallback could start";
+                    }
 
                     if (fallbackResult.Success)
                     {
-                        DiscordBotPlugin.LogDebug("Completed acknowledged webhook transport for the PNG fallback");
+                        DiscordBotPlugin.LogInfo("Completed acknowledged webhook transport for the PNG fallback");
                         continue;
                     }
 
                     result = fallbackResult;
                 }
 
-                SendTextOnlyWebhookRequest(
-                    serverRpc,
-                    pending.Webhook,
-                    pending.Route,
-                    pending.Data,
-                    string.IsNullOrWhiteSpace(result.Reason)
-                        ? "all attachment transport attempts failed"
-                        : result.Reason);
+                serverRpc = GetConnectedServerRpc();
+                if (serverRpc != null)
+                {
+                    SendTextOnlyWebhookRequest(
+                        serverRpc,
+                        pending.Webhook,
+                        pending.Route,
+                        pending.Data,
+                        string.IsNullOrWhiteSpace(result.Reason)
+                            ? "all attachment transport attempts failed"
+                            : result.Reason);
+                }
+                else
+                {
+                    OnError?.Invoke(
+                        $"Could not send text-only fallback for {pending.TransferLabel} because the server RPC disconnected");
+                }
             }
         }
         finally
         {
-            m_remoteAttachmentAckWait = null;
+            m_remoteAttachmentAckWaits.Clear();
             m_remoteAttachmentUpload = null;
         }
+    }
+
+    private static ZRpc? GetConnectedServerRpc()
+    {
+        ZRpc? serverRpc = ZNet.instance?.GetServerRPC();
+        return serverRpc != null && serverRpc.IsConnected() ? serverRpc : null;
     }
 
     private static bool CanUseFallbackAttachment(PendingRemoteAttachment pending)
@@ -866,7 +935,7 @@ public class Discord : MonoBehaviour
         {
             result.Reason =
                 $"{transferLabel} required an invalid transport size " +
-                $"({FormatBytes(attachment.Length)}, {chunkCount} chunks)";
+                $"({SizeFormatter.FormatBytes(attachment.Length)}, {chunkCount} chunks)";
             yield break;
         }
 
@@ -903,61 +972,46 @@ public class Discord : MonoBehaviour
             startResult);
         if (!startResult.Success)
         {
+            result.Code = startResult.Code;
             result.Reason = $"server rejected or did not acknowledge {cleanLabel} start: {startResult.Reason}";
             yield break;
         }
 
-        for (int chunkIndex = 0; chunkIndex < chunkCount; ++chunkIndex)
+        for (int windowStart = 0; windowStart < chunkCount; windowStart += RemoteAttachmentChunkWindowSize)
         {
-            if (!serverRpc.IsConnected())
+            List<PendingChunkSend> window = new();
+            int windowEnd = Math.Min(chunkCount, windowStart + RemoteAttachmentChunkWindowSize);
+            for (int chunkIndex = windowStart; chunkIndex < windowEnd; ++chunkIndex)
             {
-                result.Reason =
-                    $"server connection closed while sending {cleanLabel} chunk {chunkIndex + 1}/{chunkCount}";
-                yield break;
+                int offset = chunkIndex * RemoteAttachmentChunkBytes;
+                int length = Math.Min(RemoteAttachmentChunkBytes, attachment.Length - offset);
+                byte[] chunk = new byte[length];
+                Buffer.BlockCopy(attachment, offset, chunk, 0, length);
+                window.Add(new PendingChunkSend(chunkIndex, chunk));
             }
 
-            int offset = chunkIndex * RemoteAttachmentChunkBytes;
-            int length = Math.Min(RemoteAttachmentChunkBytes, attachment.Length - offset);
-            byte[] chunk = new byte[length];
-            Buffer.BlockCopy(attachment, offset, chunk, 0, length);
-
-            RemoteUploadResult chunkResult = new();
-            int currentChunk = chunkIndex;
-            yield return SendPackageWithAck(
-                serverRpc,
-                nameof(RPC_WebhookAttachmentChunk),
-                () =>
-                {
-                    ZPackage package = new();
-                    package.Write(WebhookBrokerProtocolVersion);
-                    package.Write(requestId);
-                    package.Write(currentChunk);
-                    package.Write(chunk);
-                    return package;
-                },
-                requestId,
-                AttachmentAckStage.Chunk,
-                chunkIndex,
-                chunkResult);
-            if (!chunkResult.Success)
+            RemoteUploadResult windowResult = new();
+            yield return SendChunkWindowWithAck(serverRpc, requestId, window, windowResult);
+            if (!windowResult.Success)
             {
                 RemoteUploadResult abortResult = new();
                 yield return AbortAttachmentOnServer(
                     serverRpc,
                     requestId,
-                    $"chunk {chunkIndex + 1}/{chunkCount} failed",
+                    $"chunk window {windowStart + 1}-{windowEnd}/{chunkCount} failed",
                     abortResult);
+                result.Code = windowResult.Code;
                 result.Reason =
-                    $"{cleanLabel} chunk {chunkIndex + 1}/{chunkCount} failed after " +
-                    $"{RemoteAttachmentMaxRetries} attempts: {chunkResult.Reason}";
+                    $"{cleanLabel} chunk window {windowStart + 1}-{windowEnd}/{chunkCount} failed: " +
+                    windowResult.Reason;
                 yield break;
             }
 
-            if ((chunkIndex + 1) % 32 == 0 || chunkIndex + 1 == chunkCount)
+            if (windowEnd % 32 == 0 || windowEnd == chunkCount)
             {
                 DiscordBotPlugin.LogDebug(
-                    $"Acknowledged {cleanLabel} chunk {chunkIndex + 1}/{chunkCount} " +
-                    $"({FormatBytes(Math.Min(attachment.Length, (chunkIndex + 1) * RemoteAttachmentChunkBytes))})");
+                    $"Acknowledged {cleanLabel} chunks {windowStart + 1}-{windowEnd}/{chunkCount} " +
+                    $"({SizeFormatter.FormatBytes(Math.Min(attachment.Length, windowEnd * RemoteAttachmentChunkBytes))})");
             }
         }
 
@@ -979,6 +1033,7 @@ public class Discord : MonoBehaviour
         if (completeResult.Success)
         {
             result.Success = true;
+            result.Code = completeResult.Code;
             result.Reason = completeResult.Reason;
             yield break;
         }
@@ -989,16 +1044,100 @@ public class Discord : MonoBehaviour
             requestId,
             "completion acknowledgement failed",
             finalAbortResult);
-        if (finalAbortResult.Success &&
-            string.Equals(finalAbortResult.Reason, "already completed", StringComparison.OrdinalIgnoreCase))
+        if (finalAbortResult.Success && finalAbortResult.Code == AttachmentAckCode.AlreadyCompleted)
         {
             result.Success = true;
+            result.Code = finalAbortResult.Code;
             result.Reason = "server had already completed the transfer";
             yield break;
         }
 
+        result.Code = completeResult.Code;
         result.Reason =
             $"server rejected or did not acknowledge {cleanLabel} completion: {completeResult.Reason}";
+    }
+
+    private IEnumerator SendChunkWindowWithAck(
+        ZRpc serverRpc,
+        string requestId,
+        List<PendingChunkSend> window,
+        RemoteUploadResult result)
+    {
+        for (int round = 1; round <= RemoteAttachmentMaxRetries; ++round)
+        {
+            if (!serverRpc.IsConnected())
+            {
+                result.Reason = "server connection is closed";
+                yield break;
+            }
+
+            foreach (PendingChunkSend entry in window.Where(entry => !entry.Success))
+            {
+                entry.Attempts++;
+                AttachmentAckWaitState waitState = new(requestId, AttachmentAckStage.Chunk, entry.ChunkIndex);
+                m_remoteAttachmentAckWaits[GetAckKey(requestId, AttachmentAckStage.Chunk, entry.ChunkIndex)] = waitState;
+
+                ZPackage package = new();
+                package.Write(WebhookBrokerProtocolVersion);
+                package.Write(requestId);
+                package.Write(entry.ChunkIndex);
+                package.Write(entry.Data);
+                serverRpc.Invoke(nameof(RPC_WebhookAttachmentChunk), package);
+            }
+
+            float deadline = Time.realtimeSinceStartup + RemoteAttachmentAckTimeoutSeconds;
+            while (serverRpc.IsConnected() && Time.realtimeSinceStartup < deadline)
+            {
+                bool allReceived = window.Where(entry => !entry.Success).All(entry =>
+                {
+                    string key = GetAckKey(requestId, AttachmentAckStage.Chunk, entry.ChunkIndex);
+                    return m_remoteAttachmentAckWaits.TryGetValue(key, out AttachmentAckWaitState? wait) && wait.Received;
+                });
+                if (allReceived) break;
+                yield return null;
+            }
+
+            foreach (PendingChunkSend entry in window.Where(entry => !entry.Success))
+            {
+                string key = GetAckKey(requestId, AttachmentAckStage.Chunk, entry.ChunkIndex);
+                if (m_remoteAttachmentAckWaits.TryGetValue(key, out AttachmentAckWaitState? waitState))
+                {
+                    if (waitState.Received && waitState.Success)
+                    {
+                        entry.Success = true;
+                        entry.Reason = waitState.Reason;
+                    }
+                    else
+                    {
+                        entry.Reason = waitState.Received
+                            ? waitState.Reason
+                            : $"ACK timed out after {RemoteAttachmentAckTimeoutSeconds:0.##} seconds";
+                    }
+                    m_remoteAttachmentAckWaits.Remove(key);
+                }
+                else
+                {
+                    entry.Reason = "ACK state was unavailable";
+                }
+            }
+
+            if (window.All(entry => entry.Success))
+            {
+                result.Success = true;
+                result.Code = AttachmentAckCode.Acknowledged;
+                yield break;
+            }
+
+            if (round < RemoteAttachmentMaxRetries)
+            {
+                yield return new WaitForSecondsRealtime(RemoteAttachmentRetryDelaySeconds * round);
+            }
+        }
+
+        PendingChunkSend failed = window.First(entry => !entry.Success);
+        result.Code = AttachmentAckCode.Rejected;
+        result.Reason =
+            $"chunk {failed.ChunkIndex + 1} failed after {failed.Attempts} attempts: {failed.Reason}";
     }
 
     private IEnumerator AbortAttachmentOnServer(
@@ -1039,6 +1178,7 @@ public class Discord : MonoBehaviour
         int chunkIndex,
         RemoteUploadResult result)
     {
+        string ackKey = GetAckKey(requestId, stage, chunkIndex);
         for (int attempt = 1; attempt <= RemoteAttachmentMaxRetries; ++attempt)
         {
             if (!serverRpc.IsConnected())
@@ -1048,7 +1188,7 @@ public class Discord : MonoBehaviour
             }
 
             AttachmentAckWaitState waitState = new(requestId, stage, chunkIndex);
-            m_remoteAttachmentAckWait = waitState;
+            m_remoteAttachmentAckWaits[ackKey] = waitState;
             serverRpc.Invoke(rpcName, packageFactory());
 
             float deadline = Time.realtimeSinceStartup + RemoteAttachmentAckTimeoutSeconds;
@@ -1062,26 +1202,22 @@ public class Discord : MonoBehaviour
             if (waitState.Received && waitState.Success)
             {
                 result.Success = true;
+                result.Code = waitState.Code;
                 result.Reason = waitState.Reason;
-                if (ReferenceEquals(m_remoteAttachmentAckWait, waitState))
-                {
-                    m_remoteAttachmentAckWait = null;
-                }
+                m_remoteAttachmentAckWaits.Remove(ackKey);
                 yield break;
             }
 
             string failureReason = waitState.Received
                 ? waitState.Reason
                 : $"ACK timed out after {RemoteAttachmentAckTimeoutSeconds:0.##} seconds";
+            result.Code = waitState.Code;
             result.Reason = failureReason;
             DiscordBotPlugin.LogWarning(
                 $"Webhook attachment {stage} " +
                 $"{(chunkIndex >= 0 ? chunkIndex.ToString() : string.Empty)} " +
                 $"attempt {attempt}/{RemoteAttachmentMaxRetries} failed: {failureReason}");
-            if (ReferenceEquals(m_remoteAttachmentAckWait, waitState))
-            {
-                m_remoteAttachmentAckWait = null;
-            }
+            m_remoteAttachmentAckWaits.Remove(ackKey);
             if (attempt < RemoteAttachmentMaxRetries)
             {
                 yield return new WaitForSecondsRealtime(RemoteAttachmentRetryDelaySeconds * attempt);
@@ -1089,9 +1225,14 @@ public class Discord : MonoBehaviour
         }
     }
 
+    private static string GetAckKey(string requestId, AttachmentAckStage stage, int chunkIndex)
+    {
+        return $"{requestId}:{(int)stage}:{chunkIndex}";
+    }
+
     private static void RPC_WebhookAttachmentAck(ZRpc rpc, ZPackage package)
     {
-        if (isServer || instance?.m_remoteAttachmentAckWait == null) return;
+        if (isServer || instance == null) return;
         try
         {
             int protocolVersion = package.ReadInt();
@@ -1099,18 +1240,29 @@ public class Discord : MonoBehaviour
             int stageValue = package.ReadInt();
             int chunkIndex = package.ReadInt();
             bool success = package.ReadBool();
+            int codeValue = package.ReadInt();
             string reason = package.ReadString();
-            AttachmentAckWaitState waitState = instance.m_remoteAttachmentAckWait;
             if (protocolVersion != WebhookBrokerProtocolVersion ||
                 !Enum.IsDefined(typeof(AttachmentAckStage), stageValue) ||
+                !Enum.IsDefined(typeof(AttachmentAckCode), codeValue))
+            {
+                return;
+            }
+
+            AttachmentAckStage stage = (AttachmentAckStage)stageValue;
+            string ackKey = GetAckKey(requestId, stage, chunkIndex);
+            if (!instance.m_remoteAttachmentAckWaits.TryGetValue(
+                    ackKey,
+                    out AttachmentAckWaitState? waitState) ||
                 !string.Equals(waitState.RequestId, requestId, StringComparison.Ordinal) ||
-                waitState.Stage != (AttachmentAckStage)stageValue ||
+                waitState.Stage != stage ||
                 waitState.ChunkIndex != chunkIndex)
             {
                 return;
             }
 
             waitState.Success = success;
+            waitState.Code = (AttachmentAckCode)codeValue;
             waitState.Reason = SanitizeTransferLabel(reason);
             waitState.Received = true;
         }
@@ -1189,7 +1341,7 @@ public class Discord : MonoBehaviour
 
             if (IsCompletedRemoteTransfer(rpc, requestId))
             {
-                SendAttachmentAck(rpc, requestId, AttachmentAckStage.Start, -1, true, "already completed");
+                SendAttachmentAck(rpc, requestId, AttachmentAckStage.Start, -1, true, AttachmentAckCode.AlreadyCompleted, "already completed");
                 return;
             }
 
@@ -1197,7 +1349,7 @@ public class Discord : MonoBehaviour
             {
                 if (string.Equals(existing.RequestId, requestId, StringComparison.Ordinal))
                 {
-                    SendAttachmentAck(rpc, requestId, AttachmentAckStage.Start, -1, true, "transfer already accepted");
+                    SendAttachmentAck(rpc, requestId, AttachmentAckStage.Start, -1, true, AttachmentAckCode.Accepted, "transfer already accepted");
                 }
                 else
                 {
@@ -1228,6 +1380,19 @@ public class Discord : MonoBehaviour
                 return;
             }
 
+            long activeTransferBytes = RemoteWebhookTransfers.Values.Sum(transfer => (long)transfer.Buffer.Length);
+            if (activeTransferBytes + totalLength > MaxConcurrentRemoteTransferBytes)
+            {
+                SendAttachmentAck(
+                    rpc,
+                    requestId,
+                    AttachmentAckStage.Start,
+                    -1,
+                    false,
+                    $"server attachment memory limit would be exceeded ({SizeFormatter.FormatBytes((int)activeTransferBytes)} active)");
+                return;
+            }
+
             if (!IsAllowedAttachmentMetadata(webhook, mimeType, filename))
             {
                 SendAttachmentAck(rpc, requestId, AttachmentAckStage.Start, -1, false, "attachment type or filename is not allowed");
@@ -1246,10 +1411,10 @@ public class Discord : MonoBehaviour
                 totalLength,
                 chunkCount);
 
-            DiscordBotPlugin.LogDebug(
+            DiscordBotPlugin.LogInfo(
                 $"Accepted {transferLabel} transfer from a client: " +
-                $"{chunkCount} acknowledged chunks, {FormatBytes(totalLength)}");
-            SendAttachmentAck(rpc, requestId, AttachmentAckStage.Start, -1, true, "accepted");
+                $"{chunkCount} acknowledged chunks, {SizeFormatter.FormatBytes(totalLength)}");
+            SendAttachmentAck(rpc, requestId, AttachmentAckStage.Start, -1, true, AttachmentAckCode.Accepted, "accepted");
         }
         catch (Exception ex)
         {
@@ -1300,7 +1465,7 @@ public class Discord : MonoBehaviour
             }
 
             transfer.LastActivity = Time.realtimeSinceStartup;
-            SendAttachmentAck(rpc, requestId, AttachmentAckStage.Chunk, chunkIndex, true, "acknowledged");
+            SendAttachmentAck(rpc, requestId, AttachmentAckStage.Chunk, chunkIndex, true, AttachmentAckCode.Acknowledged, "acknowledged");
         }
         catch (Exception ex)
         {
@@ -1330,7 +1495,14 @@ public class Discord : MonoBehaviour
                 !string.Equals(transfer.RequestId, requestId, StringComparison.Ordinal))
             {
                 bool completed = IsCompletedRemoteTransfer(rpc, requestId);
-                SendAttachmentAck(rpc, requestId, AttachmentAckStage.Complete, -1, completed, completed ? "already completed" : "unknown transfer");
+                SendAttachmentAck(
+                    rpc,
+                    requestId,
+                    AttachmentAckStage.Complete,
+                    -1,
+                    completed,
+                    completed ? AttachmentAckCode.AlreadyCompleted : AttachmentAckCode.Rejected,
+                    completed ? "already completed" : "unknown transfer");
                 return;
             }
 
@@ -1341,7 +1513,7 @@ public class Discord : MonoBehaviour
                 string reason =
                     $"incomplete transfer: received " +
                     $"{transfer.ReceivedChunkCount}/{transfer.ReceivedChunks.Length} chunks and " +
-                    $"{FormatBytes(transfer.ReceivedBytes)}/{FormatBytes(transfer.Buffer.Length)}";
+                    $"{SizeFormatter.FormatBytes(transfer.ReceivedBytes)}/{SizeFormatter.FormatBytes(transfer.Buffer.Length)}";
                 DiscordBotPlugin.LogWarning($"Rejected {transfer.TransferLabel}: {reason}");
                 SendAttachmentAck(rpc, requestId, AttachmentAckStage.Complete, -1, false, reason);
                 return;
@@ -1362,10 +1534,10 @@ public class Discord : MonoBehaviour
                     transfer.Buffer,
                     transfer.Filename,
                     transfer.MimeType));
-            DiscordBotPlugin.LogDebug(
+            DiscordBotPlugin.LogInfo(
                 $"Completed {transfer.TransferLabel} transfer from a client: " +
-                $"{FormatBytes(transfer.Buffer.Length)}");
-            SendAttachmentAck(rpc, requestId, AttachmentAckStage.Complete, -1, true, "completed");
+                $"{SizeFormatter.FormatBytes(transfer.Buffer.Length)}");
+            SendAttachmentAck(rpc, requestId, AttachmentAckStage.Complete, -1, true, AttachmentAckCode.Completed, "completed");
         }
         catch (Exception ex)
         {
@@ -1393,7 +1565,7 @@ public class Discord : MonoBehaviour
 
             if (IsCompletedRemoteTransfer(rpc, requestId))
             {
-                SendAttachmentAck(rpc, requestId, AttachmentAckStage.Abort, -1, true, "already completed");
+                SendAttachmentAck(rpc, requestId, AttachmentAckStage.Abort, -1, true, AttachmentAckCode.AlreadyCompleted, "already completed");
                 return;
             }
 
@@ -1404,7 +1576,7 @@ public class Discord : MonoBehaviour
                 DiscordBotPlugin.LogWarning($"Aborted {transfer.TransferLabel} transfer from a client: {reason}");
             }
 
-            SendAttachmentAck(rpc, requestId, AttachmentAckStage.Abort, -1, true, "aborted");
+            SendAttachmentAck(rpc, requestId, AttachmentAckStage.Abort, -1, true, AttachmentAckCode.Aborted, "aborted");
         }
         catch (Exception ex)
         {
@@ -1421,6 +1593,25 @@ public class Discord : MonoBehaviour
         bool success,
         string reason)
     {
+        SendAttachmentAck(
+            rpc,
+            requestId,
+            stage,
+            chunkIndex,
+            success,
+            success ? AttachmentAckCode.Acknowledged : AttachmentAckCode.Rejected,
+            reason);
+    }
+
+    private static void SendAttachmentAck(
+        ZRpc rpc,
+        string requestId,
+        AttachmentAckStage stage,
+        int chunkIndex,
+        bool success,
+        AttachmentAckCode code,
+        string reason)
+    {
         if (!rpc.IsConnected() || !IsValidRequestId(requestId)) return;
         ZPackage package = new();
         package.Write(WebhookBrokerProtocolVersion);
@@ -1428,6 +1619,7 @@ public class Discord : MonoBehaviour
         package.Write((int)stage);
         package.Write(chunkIndex);
         package.Write(success);
+        package.Write((int)code);
         package.Write(SanitizeTransferLabel(reason));
         rpc.Invoke(nameof(RPC_WebhookAttachmentAck), package);
     }
@@ -1632,12 +1824,6 @@ public class Discord : MonoBehaviour
         return sanitized.Length <= 128 ? sanitized : sanitized.Substring(0, 128);
     }
 
-    private static string FormatBytes(int bytes)
-    {
-        if (bytes >= 1024 * 1024) return $"{bytes / (1024f * 1024f):0.00} MiB";
-        if (bytes >= 1024) return $"{bytes / 1024f:0.0} KiB";
-        return $"{bytes} bytes";
-    }
 
     private static bool IsAllowedRoute(Webhook webhook, WebhookRoute route)
     {
