@@ -39,6 +39,11 @@ public static class OnDeath
             bool isGeneratingQuip = DiscordBotPlugin.ImproveDeathQuips && ChatAI.HasKey() && chatAI != null;
             string title = $"{playerName} {Keys.HasDied}";
 
+            if (isGeneratingQuip)
+            {
+                chatAI!.OnDeathQuip = chatAI.HandleDeathQuip;
+            }
+
             if (DiscordBotPlugin.ScreenshotGif)
             {
                 Recorder.instance?.StartRecording(title, quip, avatar);
@@ -49,8 +54,7 @@ public static class OnDeath
             }
             else if (isGeneratingQuip)
             {
-                chatAI!.OnDeathQuip = chatAI.HandleDeathQuip;
-                chatAI.OnDeathQuip += message =>
+                chatAI!.OnDeathQuip += message =>
                 {
                     Discord.instance?.SendEmbedMessage(Webhook.DeathFeed, title, message, thumbnail: avatar);
                     string worldName = ZNet.instance?.GetWorldName() ?? "Server";

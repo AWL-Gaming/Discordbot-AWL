@@ -22,6 +22,7 @@ public class Recorder : MonoBehaviour
     private int generation;
     private Coroutine? recordingCoroutine;
     private Coroutine? waitCoroutine;
+    private GifEncodeJob? activeEncodeJob;
 
     private static int gifHeight => DiscordBotPlugin.GifResolution.height;
     private static int gifWidth => DiscordBotPlugin.GifResolution.width;
@@ -55,6 +56,7 @@ public class Recorder : MonoBehaviour
         public readonly Image FallbackFrame;
         public readonly List<string> Diagnostics = new();
         public volatile bool Completed;
+        public volatile bool Cancelled;
         public byte[] Bytes = Array.Empty<byte>();
         public string SelectedProfile = string.Empty;
         public string Error = string.Empty;
@@ -87,6 +89,11 @@ public class Recorder : MonoBehaviour
     private void StopAndRestoreHud()
     {
         generation++;
+        if (activeEncodeJob != null)
+        {
+            activeEncodeJob.Cancelled = true;
+            activeEncodeJob = null;
+        }
 
         if (recordingCoroutine != null)
         {
@@ -175,6 +182,7 @@ public class Recorder : MonoBehaviour
 
         isProcessing = true;
         GifEncodeJob job = new(currentGeneration, frames);
+        activeEncodeJob = job;
         Thread thread = new(() => CreateGif(job)) { IsBackground = true };
         thread.Start();
         waitCoroutine = StartCoroutine(WaitForJob(job));
@@ -182,13 +190,15 @@ public class Recorder : MonoBehaviour
 
     private IEnumerator WaitForJob(GifEncodeJob job)
     {
-        while (!job.Completed && job.Generation == generation) yield return null;
+        while (!job.Completed && !job.Cancelled && job.Generation == generation) yield return null;
 
-        if (job.Generation != generation)
+        if (job.Cancelled || job.Generation != generation)
         {
+            if (ReferenceEquals(activeEncodeJob, job)) activeEncodeJob = null;
             yield break;
         }
 
+        if (ReferenceEquals(activeEncodeJob, job)) activeEncodeJob = null;
         waitCoroutine = null;
         isProcessing = false;
 
@@ -252,7 +262,9 @@ public class Recorder : MonoBehaviour
             List<GifEncodingProfile> profiles = BuildEncodingProfiles();
             foreach (GifEncodingProfile profile in profiles)
             {
-                byte[] bytes = EncodeGif(job.Frames, profile);
+                if (job.Cancelled) return;
+                byte[] bytes = EncodeGif(job, profile);
+                if (job.Cancelled) return;
                 string diagnostic =
                     $"Encoded death GIF using {profile.Label}: {profile.Width}x{profile.Height}, " +
                     $"every {profile.FrameStep} frame(s), {profile.FramesPerSecond} FPS, {SizeFormatter.FormatBytes(bytes.Length)}";
@@ -272,7 +284,7 @@ public class Recorder : MonoBehaviour
         }
         catch (Exception ex)
         {
-            job.Error = ex.Message;
+            if (!job.Cancelled) job.Error = ex.Message;
         }
         finally
         {
@@ -311,7 +323,7 @@ public class Recorder : MonoBehaviour
         profiles.Add(new GifEncodingProfile(width, height, frameStep, framesPerSecond, label));
     }
 
-    private static byte[] EncodeGif(List<Image> frames, GifEncodingProfile profile)
+    private static byte[] EncodeGif(GifEncodeJob job, GifEncodingProfile profile)
     {
         GIFEncoder encoder = new()
         {
@@ -322,12 +334,15 @@ public class Recorder : MonoBehaviour
             dispose = 1
         };
 
+        if (job.Cancelled) return Array.Empty<byte>();
+
         using MemoryStream stream = new();
         encoder.Start(stream);
         int addedFrames = 0;
-        for (int index = 0; index < frames.Count; index += profile.FrameStep)
+        for (int index = 0; index < job.Frames.Count; index += profile.FrameStep)
         {
-            Image image = CloneImage(frames[index]);
+            if (job.Cancelled) return Array.Empty<byte>();
+            Image image = CloneImage(job.Frames[index]);
             image.ResizeBilinear(profile.Width, profile.Height);
             image.Flip();
             encoder.AddFrame(image);
@@ -339,6 +354,7 @@ public class Recorder : MonoBehaviour
             throw new InvalidOperationException("No frames were available for GIF encoding");
         }
 
+        if (job.Cancelled) return Array.Empty<byte>();
         encoder.Finish();
         return stream.ToArray();
     }

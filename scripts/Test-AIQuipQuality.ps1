@@ -19,10 +19,16 @@ if (-not (Test-Path -LiteralPath $AssemblyPath)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($BepInExCorePath)) {
-    $BepInExCorePath = Join-Path $env:APPDATA 'r2modmanPlus-local\Valheim\profiles\AWL Gaming Modpack ADMIN\BepInEx\core'
+    $BepInExCorePath = [Environment]::GetEnvironmentVariable('BEPINEX_CORE_PATH')
 }
 if ([string]::IsNullOrWhiteSpace($ValheimManagedPath)) {
-    $ValheimManagedPath = 'D:\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed'
+    $ValheimManagedPath = [Environment]::GetEnvironmentVariable('VALHEIM_MANAGED_PATH')
+}
+if ([string]::IsNullOrWhiteSpace($BepInExCorePath) -or -not (Test-Path -LiteralPath $BepInExCorePath)) {
+    throw 'BepInEx core path is required. Pass -BepInExCorePath or set BEPINEX_CORE_PATH.'
+}
+if ([string]::IsNullOrWhiteSpace($ValheimManagedPath) -or -not (Test-Path -LiteralPath $ValheimManagedPath)) {
+    throw 'Valheim managed path is required. Pass -ValheimManagedPath or set VALHEIM_MANAGED_PATH.'
 }
 
 $resolveDirs = @(
@@ -32,9 +38,9 @@ $resolveDirs = @(
 ) + $ReferencePath
 
 $resolveHandler = [ResolveEventHandler]{
-    param($_sender, $eventArgs)
+    param($_sender, $resolveArgs)
 
-    $fileName = ([Reflection.AssemblyName]$eventArgs.Name).Name + '.dll'
+    $fileName = ([Reflection.AssemblyName]$resolveArgs.Name).Name + '.dll'
     foreach ($directory in $resolveDirs) {
         if ([string]::IsNullOrWhiteSpace($directory)) { continue }
         $candidate = Join-Path $directory $fileName
@@ -115,9 +121,9 @@ try {
 
         if ($result.Accepted) {
             Assert-True -Value ($result.Score -ge 70) -Name ($test.Name + ' score')
-            if ($test.Name -eq 'Valid death quip') {
-                Assert-True -Value ($result.Final -match '\bMed\b') -Name 'Exact player replacement'
-                Assert-True -Value ($result.Final -notmatch '\{PLAYER\}') -Name 'Player token removal'
+            if ($test.Name -in @('Valid death quip', 'Lowercase player token')) {
+                Assert-True -Value ($result.Final -match '\bMed\b') -Name ($test.Name + ' exact player replacement')
+                Assert-True -Value ($result.Final -notmatch '\{PLAYER\}') -Name ($test.Name + ' player token removal')
             }
             if ($test.Name -eq 'Valid day quip') {
                 Assert-True -Value ($result.Final -match '\bDay 42\b') -Name 'Exact day replacement'
