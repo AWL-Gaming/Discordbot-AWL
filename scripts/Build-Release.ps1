@@ -15,6 +15,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectPath = Join-Path $repoRoot 'DiscordBot.csproj'
 $nugetConfig = Join-Path $repoRoot 'NuGet.Config'
 $publicizedPath = Join-Path $repoRoot 'build\publicized_assemblies'
+$nugetPackagesPath = Join-Path $repoRoot 'build\nuget-packages'
 $copyOutputPath = Join-Path $repoRoot 'build\plugin'
 
 function Resolve-ExistingPath {
@@ -31,17 +32,39 @@ function Resolve-ExistingPath {
     return $null
 }
 
+function Resolve-ValheimManagedPath {
+    param([string]$Root)
+
+    if ([string]::IsNullOrWhiteSpace($Root)) { return $null }
+    $expandedRoot = [Environment]::ExpandEnvironmentVariables($Root)
+    foreach ($relativePath in @('valheim_server_Data\Managed', 'valheim_Data\Managed')) {
+        $candidate = Join-Path $expandedRoot $relativePath
+        if (Test-Path -LiteralPath (Join-Path $candidate 'assembly_valheim.dll')) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+
+    return $null
+}
+
 if ([string]::IsNullOrWhiteSpace($GamePath)) {
-    $GamePath = Resolve-ExistingPath -RequiredChild 'valheim_Data\Managed\assembly_valheim.dll' -Candidates @(
+    foreach ($candidate in @(
         'D:\SteamLibrary\steamapps\common\Valheim',
         'C:\Program Files (x86)\Steam\steamapps\common\Valheim',
         'C:\Program Files\Steam\steamapps\common\Valheim'
-    )
+    )) {
+        if (Resolve-ValheimManagedPath -Root $candidate) {
+            $GamePath = (Resolve-Path -LiteralPath $candidate).Path
+            break
+        }
+    }
 }
 
-if ([string]::IsNullOrWhiteSpace($GamePath) -or -not (Test-Path -LiteralPath (Join-Path $GamePath 'valheim_Data\Managed\assembly_valheim.dll'))) {
+$managedPath = Resolve-ValheimManagedPath -Root $GamePath
+if ([string]::IsNullOrWhiteSpace($GamePath) -or [string]::IsNullOrWhiteSpace($managedPath)) {
     throw 'Valheim was not found. Pass -GamePath with the Valheim installation directory.'
 }
+$GamePath = (Resolve-Path -LiteralPath $GamePath).Path
 
 if ([string]::IsNullOrWhiteSpace($BepInExPath)) {
     $bepCandidates = [System.Collections.Generic.List[string]]::new()
@@ -78,9 +101,8 @@ try {
     & dotnet tool restore --configfile $nugetConfig
     if ($LASTEXITCODE -ne 0) { throw 'dotnet tool restore failed.' }
 
-    New-Item -ItemType Directory -Path $publicizedPath, $copyOutputPath -Force | Out-Null
+    New-Item -ItemType Directory -Path $publicizedPath, $copyOutputPath, $nugetPackagesPath -Force | Out-Null
 
-    $managedPath = Join-Path $GamePath 'valheim_Data\Managed'
     $assemblies = @(
         @{ Source = 'assembly_valheim.dll'; Output = 'assembly_valheim_publicized.dll' },
         @{ Source = 'assembly_guiutils.dll'; Output = 'assembly_guiutils_publicized.dll' },
@@ -101,8 +123,20 @@ try {
             (Get-Item -LiteralPath $source).LastWriteTimeUtc -gt (Get-Item -LiteralPath $finalOutput).LastWriteTimeUtc
 
         if ($mustGenerate) {
-            & dotnet tool run assembly-publicizer -- $source --output $publicizedPath --target All --strip --overwrite
-            if ($LASTEXITCODE -ne 0) { throw "Failed to publicize $source" }
+            $previousRollForward = $env:DOTNET_ROLL_FORWARD
+            try {
+                $env:DOTNET_ROLL_FORWARD = 'Major'
+                & dotnet tool run assembly-publicizer -- $source --output $publicizedPath --target All --strip --overwrite
+                if ($LASTEXITCODE -ne 0) { throw "Failed to publicize $source" }
+            }
+            finally {
+                if ($null -eq $previousRollForward) {
+                    Remove-Item Env:DOTNET_ROLL_FORWARD -ErrorAction SilentlyContinue
+                }
+                else {
+                    $env:DOTNET_ROLL_FORWARD = $previousRollForward
+                }
+            }
             Copy-Item -LiteralPath $temporaryOutput -Destination $finalOutput -Force
         }
     }
@@ -114,6 +148,7 @@ try {
         "/p:BepInExPath=$BepInExPath",
         "/p:CorlibPath=$managedPath",
         "/p:PublicizedAssembliesPath=$publicizedPath",
+        "/p:RestorePackagesPath=$nugetPackagesPath",
         "/p:CopyOutputDLLPath=$copyOutputPath",
         "/p:CopyOutputDLLPath2=$copyOutputPath",
         "/p:CopyOutputDLLPath3=$copyOutputPath"

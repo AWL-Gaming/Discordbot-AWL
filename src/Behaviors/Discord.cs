@@ -414,7 +414,7 @@ public class Discord : MonoBehaviour
 
     public void Internal_BroadcastMessage(string username, string message, bool showDiscord)
     {
-        ZRoutedRpc.instance.InvokeRoutedRPC(ZRoutedRpc.Everybody, nameof(RPC_DisplayChat), username, message, showDiscord);
+        ZRoutedRpc.instance.InvokeRoutedRPC(0L, nameof(RPC_DisplayChat), username, message, showDiscord);
     }
 
     public static void RPC_ClientBotMessage(ZRpc rpc, string username, string message, bool showDiscord) => DisplayChatMessage(username, message, showDiscord);

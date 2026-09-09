@@ -782,7 +782,7 @@ public static class DiscordCommands
             {
                 var profile = Game.instance.GetPlayerProfile();
                 StringBuilder stringBuilder = new StringBuilder();
-                foreach (var kvp in profile.m_playerStats.m_stats)
+                foreach (var kvp in profile.m_playerStats[0].m_stats)
                 {
                     if (kvp.Value > 0f)
                     {
@@ -807,7 +807,7 @@ public static class DiscordCommands
             // this works differently - player receives this RPC and then uses discord bot to send a webhook message
             var profile = Game.instance.GetPlayerProfile();
             StringBuilder stringBuilder = new StringBuilder();
-            foreach (var kvp in profile.m_playerStats.m_stats)
+            foreach (var kvp in profile.m_playerStats[0].m_stats)
             {
                 if (kvp.Value > 0f)
                 {
@@ -829,7 +829,7 @@ public static class DiscordCommands
                 var sharedName = component.m_name;
                 if (Player.m_localPlayer && Player.m_localPlayer.GetPlayerName() == playerName)
                 {
-                    var count = Game.instance.m_playerProfile.m_enemyStats.TryGetValue(sharedName, out var kill)
+                    var count = Game.instance.m_playerProfile.m_playerStats[0].m_enemyStats[0].TryGetValue(sharedName, out var kill)
                         ? kill
                         : 0;
                     Discord.instance?.SendMessage(Webhook.Commands, message: $"{playerName} has killed {sharedName} `{count}` times");
@@ -848,7 +848,7 @@ public static class DiscordCommands
             }, pkg =>
             {
                 var sharedName = pkg.ReadString();
-                var count = Game.instance.m_playerProfile.m_enemyStats.TryGetValue(sharedName, out var kill)
+                var count = Game.instance.m_playerProfile.m_playerStats[0].m_enemyStats[0].TryGetValue(sharedName, out var kill)
                     ? kill
                     : 0;
                 Discord.instance?.SendMessage(Webhook.Commands, message: $"{Game.instance.m_playerProfile.m_playerName} has killed {sharedName} `{count}` times");
@@ -969,7 +969,7 @@ public static class DiscordCommands
     public static bool GiveItem(string itemName, int amount, int quality, int variant)
     {
         if (!Player.m_localPlayer || !ObjectDB.instance) return false;
-        return Player.m_localPlayer.GetInventory().AddItem(itemName, amount, quality, variant, 0L, "") != null;
+        return Player.m_localPlayer.GetInventory().AddItem(itemName, amount, quality, variant, 0L, "", false) != null;
     }
 
     public static void RPC_BotToClient(ZRpc rpc, ZPackage pkg)

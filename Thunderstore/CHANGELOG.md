@@ -1,3 +1,13 @@
+# 1.4.5
+
+- Updated DiscordBot AWL for Valheim 1.0.
+- Fixed the player login notification regression introduced upstream in 1.3.0.
+- Restored server-side login detection while preserving logout notifications and reconnect behavior.
+- Restored server configuration synchronization and Discord communication on Valheim 1.0.
+- Updated affected player stats, kill tracking, inventory, and networking calls for Valheim 1.0.
+- Updated release builds for both client and dedicated-server Valheim assembly layouts.
+- Updated the Valheim BepInEx dependency to 5.4.2350.
+
 # 1.4.4
 
 - Replaced unpaced attachment uploads with acknowledged 16 KiB chunks and bounded retries.

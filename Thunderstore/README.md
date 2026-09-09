@@ -1,17 +1,18 @@
 # DiscordBot AWL for Valheim
 
-AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://github.com/RustyMods/DiscordBot). It preserves the existing two-way Valheim and Discord integration while adding resilient AI model discovery, ordered provider/model failover, and safer client capture cleanup.
+AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://github.com/RustyMods/DiscordBot). It preserves the existing two-way Valheim and Discord integration while maintaining compatibility with current Valheim releases and safer client/server transport.
 
 Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/NOTICE.md).
 
-## AWL 1.4.4 highlights
+## AWL 1.4.5 highlights
 
-- Replaced fire-and-forget death attachment uploads with acknowledged 16 KiB chunks, bounded retries, explicit aborts, and duplicate-safe completion handling.
-- Added a bounded client attachment queue so rapid deaths are processed sequentially instead of flooding Steam networking.
-- Added adaptive GIF encoding that automatically reduces resolution and frame density when a configured GIF would exceed the 8 MiB safety ceiling.
-- Added a representative PNG frame as the attachment fallback when GIF encoding or transport cannot complete, with text-only fallback used only if both image paths fail.
-- Added exact client and server diagnostics for encoded size, selected adaptive profile, acknowledged transfer progress, retry reason, timeout, abort, and fallback selection.
-- Preserved the 1.4.3 guarded quip generation, exact player/day substitution, provider failover, server-side secret brokering, and optional multi-provider quality comparison.
+- Updated DiscordBot AWL for Valheim 1.0.
+- Fixed the player login notification regression introduced upstream in 1.3.0.
+- Restored server-side login detection while preserving logout notifications and reconnect behavior.
+- Restored server configuration synchronization and Discord communication on Valheim 1.0.
+- Updated affected player stats, kill tracking, inventory, and networking calls for Valheim 1.0.
+- Updated release builds for both client and dedicated-server Valheim assembly layouts.
+- Updated the Valheim BepInEx dependency to 5.4.2350.
 
 ## Prerequisites
 

@@ -1,10 +1,10 @@
 {
   "name": "DiscordBot_AWL",
-  "version_number": "1.4.4",
+  "version_number": "1.4.5",
   "website_url": "https://github.com/AWL-Gaming/Discordbot-AWL",
-  "description": "AWL-maintained DiscordBot fork with server-side secret brokering and resilient AI failover.",
+  "description": "AWL-maintained DiscordBot fork with Valheim 1.0 support and resilient Discord integration.",
   "dependencies": [
-    "denikson-BepInExPack_Valheim-5.4.2333",
+    "denikson-BepInExPack_Valheim-5.4.2350",
     "ValheimModding-JsonDotNET-13.0.4"
   ]
 }
