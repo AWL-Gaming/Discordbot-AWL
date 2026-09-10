@@ -1,4 +1,4 @@
-# Thunderstore publishing
+# Publishing DiscordBot AWL
 
 ## Current publication status
 
@@ -41,4 +41,15 @@ Thunderstore package versions are immutable. Changes to the icon, README, NOTICE
 8. Upload it under the same **AWLGaming** team and keep the package name `DiscordBot_AWL` unchanged.
 9. Review the rendered README, dependencies, package name, version, icon, and attribution before publishing.
 
-Version `1.4.1` is a security release. It removes webhook URL synchronization to clients, adds the server-side webhook broker, filters the retired Gemini 2.5 Flash model, and includes the branded icon and updated documentation.
+## Hexium
+
+Hexium uses the same validated release payload plus the FAQ files under `Hexium/faq/`.
+
+1. Build and validate the Thunderstore package first.
+2. Run `scripts/Build-HexiumPackage.ps1` to create `build/hexium/DiscordBot_v<version>.zip` with the FAQ included.
+3. Publish under the Hexium team namespace `AWL` for the `valheim` community.
+4. Use the listing tags `Config`, `Logging`, `Open Source`, `Tools`, and `Valheim 1.0`.
+5. Set install location to `Client & Server` and leave the license unset while upstream has no explicit license.
+6. Verify the public version, README, changelog, FAQ, dependencies, tags, and install location after publishing.
+
+Do not commit service-account or API tokens. Supply publishing credentials only through the local secure credential store or a transient environment variable used by the publisher process.

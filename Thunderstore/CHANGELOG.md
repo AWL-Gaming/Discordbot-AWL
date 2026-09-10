@@ -1,3 +1,8 @@
+# 1.4.6
+
+- Fixed a client-side null-reference error that could occur while the screenshot component initialized during server connection.
+- Screenshot and death-capture UI handling now waits for the Valheim chat window to exist instead of assuming it is ready during connection startup.
+
 # 1.4.5
 
 - Updated DiscordBot AWL for Valheim 1.0.
