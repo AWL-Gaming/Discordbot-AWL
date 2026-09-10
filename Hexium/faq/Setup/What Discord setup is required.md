@@ -1,3 +1,5 @@
+What Discord setup is required?
+
 For messages sent from Valheim to Discord, configure the appropriate Discord webhook URL.
 
 For Discord-to-game chat and Discord commands, also configure a Discord bot token and the numeric channel IDs to monitor.

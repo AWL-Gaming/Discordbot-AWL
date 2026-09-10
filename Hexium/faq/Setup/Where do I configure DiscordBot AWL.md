@@ -1,3 +1,5 @@
+Where do I configure DiscordBot AWL?
+
 The main config file is:
 
 `BepInEx/config/RustyMods.DiscordBot.cfg`
