@@ -33,6 +33,14 @@ Expected outputs:
 - `bin\Release\DiscordBot.dll`
 - `Thunderstore\DiscordBot_v<version>.zip`
 
+To build the Hexium package with FAQ entries:
+
+```powershell
+.\scripts\Build-HexiumPackage.ps1
+```
+
+This produces `build\hexium\DiscordBot_v<version>.zip`.
+
 ## Verification
 
 ```powershell
@@ -52,4 +60,4 @@ Copy-Item -LiteralPath "$profile\DiscordBot.dll" -Destination "$profile\DiscordB
 Copy-Item -LiteralPath '.\bin\Release\DiscordBot.dll' -Destination "$profile\DiscordBot.dll" -Force
 ```
 
-Start Valheim and verify `BepInEx\LogOutput.log` contains `Loading [DiscordBot 1.4.5]` and no `DiscordBot` exceptions.
+Start Valheim and verify `BepInEx\LogOutput.log` contains `Loading [DiscordBot 1.4.6]` and no `DiscordBot` exceptions.

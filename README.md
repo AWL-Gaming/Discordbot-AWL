@@ -4,15 +4,10 @@ AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://githu
 
 Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/NOTICE.md).
 
-## AWL 1.4.5 highlights
+## AWL 1.4.6 highlights
 
-- Updated DiscordBot AWL for Valheim 1.0.
-- Fixed the player login notification regression introduced upstream in 1.3.0.
-- Restored server-side login detection while preserving logout notifications and reconnect behavior.
-- Restored server configuration synchronization and Discord communication on Valheim 1.0.
-- Updated affected player stats, kill tracking, inventory, and networking calls for Valheim 1.0.
-- Updated release builds for both client and dedicated-server Valheim assembly layouts.
-- Updated the Valheim BepInEx dependency to 5.4.2350.
+- Fixed a client-side null-reference error during screenshot component initialization while connecting to a server.
+- Screenshot, selfie, and death-capture UI handling now resolves the Valheim chat window only when it is available.
 
 ## Prerequisites
 
@@ -414,7 +409,7 @@ interval: 3600
 ## Development and packaging
 
 - [BUILDING.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/BUILDING.md) contains the reproducible Windows build and validation commands.
-- [PUBLISHING.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/PUBLISHING.md) contains the Thunderstore package/upload procedure and the required upstream permission warning.
+- [PUBLISHING.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/PUBLISHING.md) contains the Thunderstore and Hexium package/upload procedures and the required upstream permission warning.
 - [NOTICE.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/NOTICE.md) records original-author attribution and redistribution status.
 
 ### Notes

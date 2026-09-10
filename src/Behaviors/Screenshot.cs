@@ -33,7 +33,18 @@ public class Screenshot : MonoBehaviour
 
     public void Start()
     {
-        m_chatWindow = Chat.instance.m_chatWindow.Find("root").gameObject;
+        TryResolveChatWindow();
+    }
+
+    private void TryResolveChatWindow()
+    {
+        if (m_chatWindow != null) return;
+
+        Chat? chat = Chat.instance;
+        if (chat == null || chat.m_chatWindow == null) return;
+
+        Transform? root = chat.m_chatWindow.Find("root");
+        if (root != null) m_chatWindow = root.gameObject;
     }
 
     public void Update()
@@ -112,6 +123,8 @@ public class Screenshot : MonoBehaviour
 
     public void HideHud()
     {
+        TryResolveChatWindow();
+
         try
         {
             Hud.instance.m_userHidden = true;
@@ -127,6 +140,8 @@ public class Screenshot : MonoBehaviour
 
     public void ShowHud()
     {
+        TryResolveChatWindow();
+
         try
         {
             Hud.instance.m_userHidden = false;
