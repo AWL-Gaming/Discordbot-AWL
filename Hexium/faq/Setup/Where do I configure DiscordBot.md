@@ -1,4 +1,4 @@
-Where do I configure DiscordBot AWL?
+Where do I configure DiscordBot?
 
 The main config file is:
 
