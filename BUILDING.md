@@ -12,20 +12,19 @@ The build script does not modify the Valheim installation or any mod profile. It
 
 ## Build and package
 
-From an ordinary PowerShell window:
+Open PowerShell in the repository root and run:
 
 ```powershell
-Set-Location -LiteralPath C:\path\to\Discordbot-AWL
 Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\Build-Release.ps1
 ```
 
-The script auto-detects common Steam, r2modman, and gale paths. Override paths when needed:
+The script auto-detects Valheim from Steam metadata and searches installed r2modman and gale profiles for BepInEx. If auto-detection is not suitable, pass the paths explicitly:
 
 ```powershell
 .\scripts\Build-Release.ps1 `
-  -GamePath 'D:\SteamLibrary\steamapps\common\Valheim' `
-  -BepInExPath "$env:APPDATA\r2modmanPlus-local\Valheim\profiles\My Profile\BepInEx"
+  -GamePath '<Valheim installation directory>' `
+  -BepInExPath '<BepInEx directory>'
 ```
 
 Expected outputs:
@@ -52,12 +51,12 @@ The build must complete with zero compiler errors. The inherited GIF encoder cur
 
 ## Local test deployment
 
-Do not replace a DLL while Valheim is running. Back up the installed DLL first, then copy the release DLL into the profile's plugin directory:
+Do not replace a DLL while Valheim is running. Back up the installed DLL first, then copy the release DLL into the profile's plugin directory. Replace `<BepInEx directory>` with the BepInEx directory used by the test profile:
 
 ```powershell
-$profile = "$env:APPDATA\r2modmanPlus-local\Valheim\profiles\My Profile\BepInEx\plugins\RustyMods-DiscordBot"
-Copy-Item -LiteralPath "$profile\DiscordBot.dll" -Destination "$profile\DiscordBot.dll.bak" -Force
-Copy-Item -LiteralPath '.\bin\Release\DiscordBot.dll' -Destination "$profile\DiscordBot.dll" -Force
+$pluginDirectory = Join-Path '<BepInEx directory>' 'plugins\RustyMods-DiscordBot'
+Copy-Item -LiteralPath "$pluginDirectory\DiscordBot.dll" -Destination "$pluginDirectory\DiscordBot.dll.bak" -Force
+Copy-Item -LiteralPath '.\bin\Release\DiscordBot.dll' -Destination "$pluginDirectory\DiscordBot.dll" -Force
 ```
 
-Start Valheim and verify `BepInEx\LogOutput.log` contains `Loading [DiscordBot 1.4.6]` and no `DiscordBot` exceptions.
+Start Valheim and verify `BepInEx\LogOutput.log` contains a `Loading [DiscordBot <version>]` entry for the version being tested and no `DiscordBot` exceptions.

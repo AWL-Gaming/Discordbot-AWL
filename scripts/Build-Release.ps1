@@ -47,12 +47,65 @@ function Resolve-ValheimManagedPath {
     return $null
 }
 
-if ([string]::IsNullOrWhiteSpace($GamePath)) {
-    foreach ($candidate in @(
-        'D:\SteamLibrary\steamapps\common\Valheim',
-        'C:\Program Files (x86)\Steam\steamapps\common\Valheim',
-        'C:\Program Files\Steam\steamapps\common\Valheim'
+function Get-SteamLibraryRoots {
+    $roots = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($registryPath in @(
+        'HKCU:\SOFTWARE\Valve\Steam',
+        'HKLM:\SOFTWARE\Valve\Steam',
+        'HKLM:\SOFTWARE\WOW6432Node\Valve\Steam'
     )) {
+        if (-not (Test-Path -LiteralPath $registryPath)) { continue }
+        $properties = Get-ItemProperty -LiteralPath $registryPath -ErrorAction SilentlyContinue
+        foreach ($name in @('SteamPath', 'InstallPath')) {
+            $value = $properties.$name
+            if (-not [string]::IsNullOrWhiteSpace($value)) { $roots.Add($value) }
+        }
+    }
+
+    foreach ($programFilesRoot in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if ([string]::IsNullOrWhiteSpace($programFilesRoot)) { continue }
+        $roots.Add((Join-Path $programFilesRoot 'Steam'))
+    }
+
+    $libraries = [System.Collections.Generic.List[string]]::new()
+    foreach ($steamRoot in @($roots | Select-Object -Unique)) {
+        if ([string]::IsNullOrWhiteSpace($steamRoot)) { continue }
+        $libraries.Add($steamRoot)
+        $libraryFile = Join-Path $steamRoot 'steamapps\libraryfolders.vdf'
+        if (-not (Test-Path -LiteralPath $libraryFile)) { continue }
+
+        $contents = Get-Content -LiteralPath $libraryFile -Raw -ErrorAction SilentlyContinue
+        foreach ($match in [regex]::Matches($contents, '"path"\s+"([^"]+)"')) {
+            $libraryPath = $match.Groups[1].Value.Replace('\\', '\')
+            if (-not [string]::IsNullOrWhiteSpace($libraryPath)) { $libraries.Add($libraryPath) }
+        }
+    }
+
+    return @($libraries | Select-Object -Unique)
+}
+
+function Get-ValheimCandidates {
+    $candidates = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($registryPath in @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 892970',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 892970'
+    )) {
+        if (-not (Test-Path -LiteralPath $registryPath)) { continue }
+        $installLocation = (Get-ItemProperty -LiteralPath $registryPath -ErrorAction SilentlyContinue).InstallLocation
+        if (-not [string]::IsNullOrWhiteSpace($installLocation)) { $candidates.Add($installLocation) }
+    }
+
+    foreach ($libraryRoot in Get-SteamLibraryRoots) {
+        $candidates.Add((Join-Path $libraryRoot 'steamapps\common\Valheim'))
+    }
+
+    return @($candidates | Select-Object -Unique)
+}
+
+if ([string]::IsNullOrWhiteSpace($GamePath)) {
+    foreach ($candidate in Get-ValheimCandidates) {
         if (Resolve-ValheimManagedPath -Root $candidate) {
             $GamePath = (Resolve-Path -LiteralPath $candidate).Path
             break
