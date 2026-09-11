@@ -12,8 +12,9 @@ The upstream repository did not contain a license file or explicit redistributio
 
 ## Package build
 
+Open PowerShell in the repository root, then run:
+
 ```powershell
-Set-Location -LiteralPath C:\path\to\Discordbot-AWL
 .\scripts\Build-Release.ps1
 .\scripts\Test-ThunderstorePackage.ps1
 ```

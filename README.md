@@ -35,9 +35,9 @@ Original author: **RustyMods**. AWL Gaming maintains this fork and does not clai
 3. **Copy the `Bot Token`**
     - On the Bot page, under the "Token" section, click "Reset Token" (or "Copy" if it is already shown).
     - Confirm, then copy the generated token.
-    - Keep this token secret!, if it leaks, click "Reset Token" to generate a new one
+    - Keep this token secret. If it leaks, click "Reset Token" to generate a new one
 4. **Invite the Bot to your Discord Server**
-    - In the sidebar, click "O2Auth2" ----> "URL Generator".
+    - In the sidebar, click "OAuth2" ----> "URL Generator".
     - Under **SCOPES**, check `bot`
     - Under **BOT PERMISSIONS**, check the permissions your bot will need
         - Send Messages
@@ -132,7 +132,7 @@ New Connection = Off
 Webhook URL = <your-discord-webhook-url>
 
 ## Set channel ID to monitor for messages [Synced with Server]
-Channel ID = 9839768234583209
+Channel ID = <channel-id>
 
 ## If on, bot will send message when player shouts and monitor discord for messages [Synced with Server]
 Enabled = On
@@ -143,10 +143,10 @@ Enabled = On
 Webhook URL = <your-discord-webhook-url>
 
 ## Set channel ID to monitor for input commands [Synced with Server]
-Channel ID = 1106947857194165898
+Channel ID = <channel-id>
 
 ## List of discord admins, who can run commands [Synced with Server]
-Discord Admin = .rusty,.warp
+Discord Admin = user1,user2
 
 [5 - Setup]
 ## Add bot token here, server only
@@ -187,11 +187,11 @@ Send commands in your designated command channel:
 ```
 ### General Commands
 
-### ❓ `help`
+### `help`
 **Description:** List of all available commands  
 **Usage:** `!help`
 
-### ⚠️ `listadmins` **[Admin Only]**
+### `listadmins` **[Admin Only]**
 **Description:** List of discord admins registered to plugin  
 **Usage:** `!listadmins`
 
@@ -199,24 +199,24 @@ Send commands in your designated command channel:
 
 ### Player Management
 
-### 🐉 `listplayers` **[Admin Only]**
+### `listplayers` **[Admin Only]**
 **Description:** List of active players with their positions  
 **Usage:** `!listplayers`
 
-### ❌ `kick` **[Admin Only]**
+### `kick` **[Admin Only]**
 **Description:** Kicks player from server  
 **Usage:** `!kick <string:PlayerName>`
 
-### 🎁 `give` **[Admin Only]**
+### `give` **[Admin Only]**
 **Description:** Adds item directly into player inventory  
 **Usage:** `!give <string:PlayerName> <string:ItemName> <int:Stack> <int?:Quality> <int?:Variant>`  
 **Example:** `!give PlayerName IronSword 1 3 0`
 
-### 🌹 `pos` **[Admin Only]**
+### `pos` **[Admin Only]**
 **Description:** Get player's current position coordinates  
 **Usage:** `!pos <string:PlayerName>`
 
-### 🐅 `die` **[Admin Only]**
+### `die` **[Admin Only]**
 **Description:** Kills specified player  
 **Usage:** `!die <string:PlayerName>`
 
@@ -224,14 +224,14 @@ Send commands in your designated command channel:
 
 ### Teleportation Commands
 
-### 🏃 `teleport` **[Admin Only]**
+### `teleport` **[Admin Only]**
 **Description:** Teleport player to location, bed, or another player  
 **Usage:**
 - `teleport <string:PlayerName> bed` - Teleport to bed
 - `teleport <string:PlayerName> <string:OtherPlayerName>` - Teleport to another player
 - `teleport <string:PlayerName> <float:x> <float:y> <float:z>` - Teleport to coordinates
 
-### ⛳ `teleportall` **[Admin Only]**
+### `teleportall` **[Admin Only]**
 **Description:** Teleports all players to specified coordinates  
 **Usage:** `!teleportall <float:x> <float:y> <float:z>`
 
@@ -239,16 +239,16 @@ Send commands in your designated command channel:
 
 ### Environment & Weather
 
-### 🌪️ `listenv`
+### `listenv`
 **Description:** List of available environments  
 **Usage:** `!listenv`
 
-### ✨ `env` **[Admin Only]**
+### `env` **[Admin Only]**
 **Description:** Force environment on all players  
 **Usage:** `!env <string:EnvironmentName>`  
 **Example:** `!env Twilight_Clear`
 
-### ✨ `resetenv` **[Admin Only]**
+### `resetenv` **[Admin Only]**
 **Description:** Reset environment on all players to default  
 **Usage:** `!resetenv`
 
@@ -256,7 +256,7 @@ Send commands in your designated command channel:
 
 ### Spawning & Creatures
 
-### ❗ `spawn` **[Admin Only]**
+### `spawn` **[Admin Only]**
 **Description:** Spawns prefab at location  
 **Usage:**
 - `!spawn <string:PrefabName> <int:Level> <string:PlayerName>` - Spawn at player location
@@ -267,11 +267,11 @@ Send commands in your designated command channel:
 
 ### Events
 
-### 🌙 `listevents` **[Admin Only]**
+### `listevents` **[Admin Only]**
 **Description:** List of available event names  
 **Usage:** `!listevents`
 
-### ⭐ `event` **[Admin Only]**
+### `event` **[Admin Only]**
 **Description:** Starts an event on a player  
 **Usage:** `!event <string:EventName> <string:PlayerName>`  
 **Example:** `!event Wolves PlayerName`
@@ -280,20 +280,20 @@ Send commands in your designated command channel:
 
 ### Player Effects & Skills
 
-### 🚀 `liststatus`
+### `liststatus`
 **Description:** List of available status effects  
 **Usage:** `!liststatus`
 
-### 🍕 `addstatus` **[Admin Only]**
+### `addstatus` **[Admin Only]**
 **Description:** Add status effect to player  
 **Usage:** `!addstatus <string:PlayerName> <string:StatusEffect> <float:Duration>`  
 **Example:** `!addstatus PlayerName Rested 300`
 
-### 🙏 `listskills`
+### `listskills`
 **Description:** List of available skills  
 **Usage:** `!listskills`
 
-### 💪 `raiseskill` **[Admin Only]**
+### `raiseskill` **[Admin Only]**
 **Description:** Raises player's skill level  
 **Usage:** `!raiseskill <string:PlayerName> <string:SkillType> <float:Amount>`  
 **Example:** `!raiseskill PlayerName Swords 10`
@@ -302,16 +302,16 @@ Send commands in your designated command channel:
 
 ### Server Management
 
-### 💾 `save` **[Admin Only]**
+### `save` **[Admin Only]**
 **Description:** Save player profiles and world  
 **Usage:** `!save`
 
-### 😊 `message` **[Admin Only]**
+### `message` **[Admin Only]**
 **Description:** Broadcast message to all players (appears center screen)  
 **Usage:** `!message <message text>`  
 **Example:** `!message Server restart in 5 minutes!`
 
-### 🦄 `setkey` **[Admin Only]**
+### `setkey` **[Admin Only]**
 **Description:** Set global key (affects world state)  
 **Usage:** `!setkey <string:GlobalKeyName>`  
 **Example:** `!setkey defeated_bonemass`
@@ -320,11 +320,11 @@ Send commands in your designated command channel:
 
 ### Admin Management
 
-### 🔑 `addadmin` **[Admin Only]**
+### `addadmin` **[Admin Only]**
 **Description:** Adds discord username to admin list  
 **Usage:** `!addadmin <string:Username>`
 
-### 🔒 `removeadmin` **[Admin Only]**
+### `removeadmin` **[Admin Only]**
 **Description:** Remove discord username from admin list  
 **Usage:** `!removeadmin <string:Username>`
 

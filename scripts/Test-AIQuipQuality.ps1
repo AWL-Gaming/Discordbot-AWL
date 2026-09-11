@@ -99,7 +99,7 @@ try {
         throw 'AI request context factories were not found.'
     }
 
-    $deathContext = $deathFactory.Invoke($null, @('Med', 'Med challenged gravity and lost.'))
+    $deathContext = $deathFactory.Invoke($null, @('TestPlayer', 'TestPlayer challenged gravity and lost.'))
     $dayContext = $dayFactory.Invoke($null, @(42, 'Day 42 begins beneath Odin''s watch.'))
 
     $tests = @(
@@ -122,7 +122,7 @@ try {
         if ($result.Accepted) {
             Assert-True -Value ($result.Score -ge 70) -Name ($test.Name + ' score')
             if ($test.Name -in @('Valid death quip', 'Lowercase player token')) {
-                Assert-True -Value ($result.Final -match '\bMed\b') -Name ($test.Name + ' exact player replacement')
+                Assert-True -Value ($result.Final -match '\bTestPlayer\b') -Name ($test.Name + ' exact player replacement')
                 Assert-True -Value ($result.Final -notmatch '\{PLAYER\}') -Name ($test.Name + ' player token removal')
             }
             if ($test.Name -eq 'Valid day quip') {
