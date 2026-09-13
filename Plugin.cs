@@ -70,7 +70,7 @@ public enum ChatDisplay { Player, Bot }
 public class DiscordBotPlugin : BaseUnityPlugin
 {
     internal const string ModName = "DiscordBot";
-    internal const string ModVersion = "1.4.6";
+    internal const string ModVersion = "1.4.7";
     internal const string Author = "RustyMods";
     private const string ModGUID = Author + "." + ModName;
     private const string ConfigFileName = ModGUID + ".cfg";
@@ -437,6 +437,7 @@ public class DiscordBotPlugin : BaseUnityPlugin
         m_enableJobs = config("4 - Commands", "Jobs", Toggle.On, "If on, jobs are enabled");
 
         m_botToken = config("5 - Setup", "BOT TOKEN", "", "Add bot token here, server only", false);
+        m_botToken.SettingChanged += (_, _) => RestartDiscordGateway();
 
         m_deathNotice = config("6 - Death Feed", "Enabled", Toggle.On, "If on, bot will send message when player dies");
         m_deathFeedURL = config("6 - Death Feed", "Webhook URL", "", "Set webhook to receive death feed messages [Server Only]", false);
@@ -576,6 +577,11 @@ public class DiscordBotPlugin : BaseUnityPlugin
         }
     }
 
+    private static void RestartDiscordGateway()
+    {
+        if (!IsServer) return;
+        DiscordGatewayClient.instance?.RestartForTokenChange();
+    }
     private static void UpdateServerWebhooks()
     {
         if (!IsServer) return;

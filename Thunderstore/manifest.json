@@ -1,6 +1,6 @@
 {
   "name": "DiscordBot_AWL",
-  "version_number": "1.4.6",
+  "version_number": "1.4.7",
   "website_url": "https://github.com/AWL-Gaming/Discordbot-AWL",
   "description": "AWL-maintained DiscordBot fork with Valheim 1.0 support and resilient Discord integration.",
   "dependencies": [

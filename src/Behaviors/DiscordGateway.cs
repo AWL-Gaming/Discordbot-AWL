@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Net.WebSockets;
@@ -81,6 +81,23 @@ public class DiscordGatewayClient : MonoBehaviour
         DisconnectWebSocket();
         instance = null;
     }
+
+    public void RestartForTokenChange()
+    {
+        StopAllCoroutines();
+        DisconnectWebSocket();
+        gatewayUrl = null;
+        isConnecting = false;
+        shouldReconnect = true;
+
+        if (string.IsNullOrWhiteSpace(DiscordBotPlugin.BOT_TOKEN))
+        {
+            DiscordBotPlugin.LogWarning("Bot token not set");
+            return;
+        }
+
+        StartCoroutine(InitializeGateway());
+    }
     private static void HandleError(string message)
     {
         DiscordBotPlugin.LogError(message);
@@ -157,11 +174,19 @@ public class DiscordGatewayClient : MonoBehaviour
         if (isConnecting || isConnected) yield break;
         isConnecting = true;
         using UnityWebRequest request = UnityWebRequest.Get("https://discord.com/api/v10/gateway/bot");
-        request.SetRequestHeader("Authorization", $"Bot {DiscordBotPlugin.BOT_TOKEN}");
+        request.SetRequestHeader("Authorization", $"Bot {DiscordBotPlugin.BOT_TOKEN.Trim()}");
         request.SetRequestHeader("Content-Type", "application/json");
         
         yield return request.SendWebRequest();
         
+        if (request.responseCode == 401 || request.responseCode == 403)
+        {
+            shouldReconnect = false;
+            isConnecting = false;
+            OnError?.Invoke($"Discord rejected the configured bot token (HTTP {request.responseCode}). Check [5 - Setup] BOT TOKEN. Gateway reconnect is paused until the token changes.");
+            yield break;
+        }
+
         if (request.result == UnityWebRequest.Result.Success)
         {
             JObject response = JObject.Parse(request.downloadHandler.text);

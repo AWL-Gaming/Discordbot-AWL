@@ -1,3 +1,8 @@
+# 1.4.7
+
+- Invalid Discord bot tokens now stop repeated gateway reconnect attempts instead of spamming the server log.
+- Updating the bot token in the server config now restarts the Discord gateway connection automatically.
+
 # 1.4.6
 
 - Fixed a client-side null-reference error that could occur while the screenshot component initialized during server connection.
