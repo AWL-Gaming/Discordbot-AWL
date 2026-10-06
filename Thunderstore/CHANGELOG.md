@@ -1,3 +1,8 @@
+# 1.4.8
+
+- Fixed custom death and day quip lists being replaced with built-in defaults after a restart.
+- Custom `.txt` quip lists now load correctly from the DiscordBot config folders on startup.
+
 # 1.4.7
 
 - Invalid Discord bot tokens now stop repeated gateway reconnect attempts instead of spamming the server log.

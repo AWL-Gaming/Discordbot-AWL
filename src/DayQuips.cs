@@ -74,7 +74,7 @@ public static class DayQuips
 
     public static void Setup()
     {
-        string[] files = QuipsDir.GetFiles(".txt", true);
+        string[] files = QuipsDir.GetFiles("*.txt", true);
         if (files.Length == 0) WriteDefaults();
         else
         {

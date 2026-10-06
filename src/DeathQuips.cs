@@ -335,7 +335,7 @@ public static class DeathQuips
 
     public static void Setup()
     {
-        string[] files = QuipsDir.GetFiles(".txt", true);
+        string[] files = QuipsDir.GetFiles("*.txt", true);
         if (files.Length == 0) Write();
         else
         {

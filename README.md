@@ -4,10 +4,10 @@ AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://githu
 
 Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/NOTICE.md).
 
-## AWL 1.4.7 highlights
+## AWL 1.4.8 highlights
 
-- Invalid Discord bot tokens now stop repeated gateway reconnect attempts instead of spamming the server log.
-- Updating the bot token in the server config now restarts the Discord gateway connection automatically.
+- Custom death and day quip `.txt` lists now load correctly from the DiscordBot config folders on startup.
+- Editing `LowLevelInsults.txt` or other quip list files no longer gets replaced by built-in defaults after a restart.
 
 ## Prerequisites
 
