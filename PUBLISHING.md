@@ -48,7 +48,7 @@ Hexium uses the same validated release payload plus the FAQ files under `Hexium/
 
 1. Build and validate the Thunderstore package first.
 2. Run `scripts/Build-HexiumPackage.ps1` to create `build/hexium/DiscordBot_v<version>.zip` with the FAQ included.
-3. Publish under the Hexium team namespace `AWL` for the `valheim` community.
+3. Publish under the Hexium team namespace `AWLGaming` for the `valheim` community.
 4. Use the listing tags `Config`, `Logging`, `Open Source`, `Tools`, and `Valheim 1.0`.
 5. Set install location to `Client & Server` and leave the license unset while upstream has no explicit license.
 6. Verify the public version, README, changelog, FAQ, dependencies, tags, and install location after publishing.
