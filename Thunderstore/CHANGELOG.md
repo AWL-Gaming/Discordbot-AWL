@@ -1,3 +1,8 @@
+# 1.4.9
+
+- Added a configurable AI output language for generated messages across supported AI providers.
+- Added separate Game To Discord and Discord To Game chat relay switches while keeping the existing Enabled setting as the master switch.
+
 # 1.4.8
 
 - Fixed custom death and day quip lists being replaced with built-in defaults after a restart.

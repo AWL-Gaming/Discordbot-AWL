@@ -4,10 +4,10 @@ AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://githu
 
 Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/NOTICE.md).
 
-## AWL 1.4.8 highlights
+## AWL 1.4.9 highlights
 
-- Custom death and day quip `.txt` lists now load correctly from the DiscordBot config folders on startup.
-- Editing `LowLevelInsults.txt` or other quip list files no longer gets replaced by built-in defaults after a restart.
+- AI-generated responses can now use a configurable output language across the supported AI providers.
+- Chat relay now has separate `Game To Discord` and `Discord To Game` switches while the existing `Enabled` setting remains the master switch for backward compatibility.
 
 ## Prerequisites
 
@@ -134,8 +134,14 @@ Webhook URL = <your-discord-webhook-url>
 ## Set channel ID to monitor for messages [Synced with Server]
 Channel ID = <channel-id>
 
-## If on, bot will send message when player shouts and monitor discord for messages [Synced with Server]
+## Legacy master switch for chat relay. Leave on and use the direction settings below to control each direction independently. [Synced with Server]
 Enabled = On
+
+## Forward in-game shout chat to Discord when Enabled is on. [Synced with Server]
+Game To Discord = On
+
+## Forward messages from the configured Discord chat channel into the game when Enabled is on. [Synced with Server]
+Discord To Game = On
 
 [4 - Commands]
 
@@ -338,12 +344,15 @@ API keys remain local to the machine that owns them. With `Use Server Keys = On`
 
 Manual player prompts through the server broker remain disabled by default. Enable `Allow Player AI Prompts` only when you intentionally want that behavior.
 
+`Output Language` applies to AI-generated responses across all supported providers. Set a language name such as `German` or `French`; use `Auto` to leave the response language unconstrained. Death and day quips keep their required player/day placeholders while allowing the surrounding wording to be localized.
+
 Relevant settings:
 
 ```ini
 [8 - AI]
 Provider = Gemini
 Provider Order = Gemini, OpenRouter, ChatGPT, DeepSeek
+Output Language = English
 
 Gemini =
 Gemini Model = Flash3_6

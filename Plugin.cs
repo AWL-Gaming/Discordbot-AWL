@@ -70,7 +70,7 @@ public enum ChatDisplay { Player, Bot }
 public class DiscordBotPlugin : BaseUnityPlugin
 {
     internal const string ModName = "DiscordBot";
-    internal const string ModVersion = "1.4.8";
+    internal const string ModVersion = "1.4.9";
     internal const string Author = "RustyMods";
     private const string ModGUID = Author + "." + ModName;
     private const string ConfigFileName = ModGUID + ".cfg";
@@ -113,6 +113,8 @@ public class DiscordBotPlugin : BaseUnityPlugin
     private static ConfigEntry<string> m_chatWebhookURL = null!;
     private static ConfigEntry<string> m_chatChannelID = null!;
     private static ConfigEntry<Toggle> m_chatEnabled = null!;
+    private static ConfigEntry<Toggle> m_gameToDiscordChat = null!;
+    private static ConfigEntry<Toggle> m_discordToGameChat = null!;
     private static ConfigEntry<ChatDisplay> m_chatType = null!;
     #endregion
     #region commands
@@ -171,13 +173,16 @@ public class DiscordBotPlugin : BaseUnityPlugin
     private static ConfigEntry<Toggle> m_allowPlayerAIPrompts = null!;
     private static ConfigEntry<Toggle> m_compareQuipProviders = null!;
     private static ConfigEntry<int> m_quipProviderCandidates = null!;
+    private static ConfigEntry<string> m_aiOutputLanguage = null!;
     #endregion
 
     private static ConfigEntry<Toggle> m_enableJobs = null!;
     public static bool ShowServerStart => m_serverStartNotice.Value is Toggle.On;
     public static bool ShowBossDeath => m_showBossDeath.Value is Toggle.On;
     public static bool ShowServerDetails => m_showServerDetails.Value is Toggle.On;
-    public static bool ShowChat => m_chatEnabled.Value is Toggle.On;
+    public static bool GameToDiscordChat => m_chatEnabled.Value is Toggle.On && m_gameToDiscordChat.Value is Toggle.On;
+    public static bool DiscordToGameChat => m_chatEnabled.Value is Toggle.On && m_discordToGameChat.Value is Toggle.On;
+    public static bool ShowChat => GameToDiscordChat;
     private static bool LogErrors => m_logErrors.Value is Toggle.On;
     public static bool ShowServerStop => m_serverStopNotice.Value is Toggle.On;
     public static bool ShowServerSave => m_serverSaveNotice.Value is Toggle.On;
@@ -233,7 +238,15 @@ public class DiscordBotPlugin : BaseUnityPlugin
     public static int AIMaxPromptCharacters => Math.Max(128, m_aiMaxPromptCharacters.Value);
     public static float AIRemoteRequestCooldown => Math.Max(0f, m_aiRemoteRequestCooldown.Value);
     public static int AIRemoteResponseTimeoutSeconds => Math.Max(10, m_aiRemoteResponseTimeoutSeconds.Value);
-
+    public static string AIOutputLanguage
+    {
+        get
+        {
+            string language = (m_aiOutputLanguage.Value ?? "English").Replace("\r", " ").Replace("\n", " ").Trim();
+            if (string.IsNullOrWhiteSpace(language)) return "English";
+            return language.Length <= 64 ? language : language.Substring(0, 64).Trim();
+        }
+    }
     public static void LogWarning(string message)
     {
         records.Log(LogLevel.Warning, message);
@@ -424,7 +437,9 @@ public class DiscordBotPlugin : BaseUnityPlugin
         m_chatWebhookURL = config("3 - Chat", "Webhook URL", "", "Set discord webhook to display chat messages [Server Only]", false);
         m_chatWebhookURL.SettingChanged += (_, _) => UpdateServerWebhooks();
         m_chatChannelID = config("3 - Chat", "Channel ID", "", "Set channel ID to monitor for messages");
-        m_chatEnabled = config("3 - Chat", "Enabled", Toggle.On, "If on, bot will send message when player shouts and monitor discord for messages");
+        m_chatEnabled = config("3 - Chat", "Enabled", Toggle.On, "Legacy master switch for chat relay. Leave on and use the direction settings below to control each direction independently.");
+        m_gameToDiscordChat = config("3 - Chat", "Game To Discord", Toggle.On, "Forward in-game shout chat to Discord when Enabled is on.");
+        m_discordToGameChat = config("3 - Chat", "Discord To Game", Toggle.On, "Forward messages from the configured Discord chat channel into the game when Enabled is on.");
         m_chatType = config("3 - Chat", "Display As", ChatDisplay.Player, "Set how chat messages appear, if Player, message sent by player, else sent by bot with a prefix that player is saying");
 
         m_commandWebhookURL = config("4 - Commands", "Webhook URL", "", "Set discord webhook to display feedback messages from commands [Server Only]", false);
@@ -532,6 +547,7 @@ public class DiscordBotPlugin : BaseUnityPlugin
         m_allowPlayerAIPrompts = config("8 - AI", "Allow Player AI Prompts", Toggle.Off, "Allow manual in-game player prompts through the server AI broker. Automatic death/day quips remain allowed.", false);
         m_compareQuipProviders = config("8 - AI", "Compare Quip Providers", Toggle.Off, "When enabled, collect one quality-approved quip from multiple configured providers and use the highest-scoring result. This increases API usage and latency.", false);
         m_quipProviderCandidates = config("8 - AI", "Quip Provider Candidates", 2, "Maximum number of different providers compared for each death or day quip when Compare Quip Providers is enabled.", false);
+        m_aiOutputLanguage = config("8 - AI", "Output Language", "English", "Language used for AI-generated responses. Enter a language name such as German or French, or Auto to leave the response language unconstrained.");
         m_chatGPTAPIKEY.SettingChanged += (_, _) => UpdateServerAIKeys();
         m_geminiAPIKEY.SettingChanged += (_, _) => UpdateServerAIKeys();
         m_deepSeekAPIKEY.SettingChanged += (_, _) => UpdateServerAIKeys();

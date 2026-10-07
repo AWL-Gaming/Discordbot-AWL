@@ -18,10 +18,25 @@ internal sealed class AIRequestContext
     public string Replacement { get; private set; } = "";
     public string Fallback { get; private set; } = "";
     public string SourceContext { get; private set; } = "";
+    public bool UseEnglishQuipRules { get; private set; } = true;
 
     public bool IsQuip => Purpose is AIRequestPurpose.DeathQuip or AIRequestPurpose.DayQuip;
     public bool IsDeathQuip => Purpose == AIRequestPurpose.DeathQuip;
     public bool IsDayQuip => Purpose == AIRequestPurpose.DayQuip;
+
+    public AIRequestContext WithOutputLanguage(string language)
+    {
+        string normalized = language?.Trim() ?? "";
+        UseEnglishQuipRules = string.IsNullOrWhiteSpace(normalized) ||
+                              string.Equals(normalized, "English", StringComparison.OrdinalIgnoreCase);
+
+        if (IsDayQuip)
+        {
+            Prompt = AIQuipQuality.BuildDayPrompt(SourceContext, UseEnglishQuipRules);
+        }
+
+        return this;
+    }
 
     public static AIRequestContext General(string prompt)
     {
@@ -86,13 +101,13 @@ internal sealed class AIRequestContext
         source = Regex.Replace(
             source,
             $@"\bDay\s+{Regex.Escape(replacement)}\b",
-            $"Day {AIQuipQuality.DayToken}",
+            AIQuipQuality.DayToken,
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         return new AIRequestContext
         {
             Purpose = AIRequestPurpose.DayQuip,
-            Prompt = AIQuipQuality.BuildDayPrompt(source),
+            Prompt = AIQuipQuality.BuildDayPrompt(source, true),
             Replacement = replacement,
             Fallback = fallback,
             SourceContext = source
@@ -183,16 +198,20 @@ internal static class AIQuipQuality
             $"Death context: {context}";
     }
 
-    public static string BuildDayPrompt(string sourceContext)
+    public static string BuildDayPrompt(string sourceContext, bool useEnglishQuipRules)
     {
         string context = string.IsNullOrWhiteSpace(sourceContext)
             ? "A new Valheim day has begun."
             : sourceContext;
 
+        string tokenRule = useEnglishQuipRules
+            ? $"- Include the exact phrase Day {DayToken} exactly once. Never alter or replace that token.\n"
+            : $"- Include the literal token {DayToken} exactly once as the day number. Never alter or replace that token.\n";
+
         return
             "Write exactly one production-quality Valheim new-day announcement for Discord.\n" +
             "Output rules:\n" +
-            $"- Include the exact phrase Day {DayToken} exactly once. Never alter or replace that token.\n" +
+            tokenRule +
             "- Write one or two short sentences, 8 to 28 words total, and no more than 220 characters.\n" +
             "- Make it witty, energetic, and naturally Viking or Norse themed.\n" +
             "- Return plain text only. No markdown, labels, quotes, lists, alternatives, analysis, or preamble.\n" +
@@ -233,7 +252,7 @@ internal static class AIQuipQuality
             return false;
         }
 
-        if (!ContainsThemeTerm(normalized))
+        if (context.UseEnglishQuipRules && !ContainsThemeTerm(normalized))
         {
             error = "response lacked recognizable Valheim, Viking, or Norse flavor";
             return false;
@@ -248,7 +267,8 @@ internal static class AIQuipQuality
                 return false;
             }
 
-            if (context.IsDayQuip &&
+            if (context.UseEnglishQuipRules &&
+                context.IsDayQuip &&
                 !Regex.IsMatch(
                     normalized,
                     $@"(?<![\p{{L}}\p{{N}}])Day\s+{Regex.Escape(token)}(?![\p{{L}}\p{{N}}])",
@@ -293,7 +313,7 @@ internal static class AIQuipQuality
             return false;
         }
 
-        if (!ContainsThemeTerm(normalized))
+        if (context.UseEnglishQuipRules && !ContainsThemeTerm(normalized))
         {
             error = "response lacked recognizable Valheim, Viking, or Norse flavor";
             return false;

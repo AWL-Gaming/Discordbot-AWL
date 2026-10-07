@@ -102,6 +102,14 @@ try {
     $deathContext = $deathFactory.Invoke($null, @('TestPlayer', 'TestPlayer challenged gravity and lost.'))
     $dayContext = $dayFactory.Invoke($null, @(42, 'Day 42 begins beneath Odin''s watch.'))
 
+    $withOutputLanguage = $contextType.GetMethod('WithOutputLanguage', [Reflection.BindingFlags]'Public,Instance')
+    if ($null -eq $withOutputLanguage) { throw 'WithOutputLanguage was not found.' }
+
+    $germanDeathContext = $deathFactory.Invoke($null, @('TestPlayer', 'TestPlayer challenged gravity and lost.'))
+    $null = $withOutputLanguage.Invoke($germanDeathContext, @('German'))
+    $germanDayContext = $dayFactory.Invoke($null, @(42, 'Day 42 begins beneath Odin''s watch.'))
+    $null = $withOutputLanguage.Invoke($germanDayContext, @('German'))
+
     $tests = @(
         @{ Name = 'Valid death quip'; Context = $deathContext; Candidate = '{PLAYER} tripped over fate; Odin stamped the paperwork for Valhalla.'; Expected = $true },
         @{ Name = 'Lowercase player token'; Context = $deathContext; Candidate = '{player} tripped over fate; Odin stamped the paperwork for Valhalla.'; Expected = $true },
@@ -112,7 +120,9 @@ try {
         @{ Name = 'Model planning preamble'; Context = $deathContext; Candidate = 'Selecting the Best Option: {PLAYER} reached Valhalla while Odin reviewed the alternatives.'; Expected = $false },
         @{ Name = 'Missing Norse flavor'; Context = $deathContext; Candidate = '{PLAYER} fell down and learned a very ordinary lesson about gravity today.'; Expected = $false },
         @{ Name = 'Valid day quip'; Context = $dayContext; Candidate = 'Day {DAY} dawns; Odin demands fresh axes and fewer excuses from every warrior.'; Expected = $true },
-        @{ Name = 'Bare day token rejected'; Context = $dayContext; Candidate = '{DAY} rises beneath Odin''s watch; every Viking prepares for another brutal morning.'; Expected = $false }
+        @{ Name = 'Bare day token rejected'; Context = $dayContext; Candidate = '{DAY} rises beneath Odin''s watch; every Viking prepares for another brutal morning.'; Expected = $false },
+        @{ Name = 'German death quip'; Context = $germanDeathContext; Candidate = '{PLAYER} stolperte ins Jenseits; selbst die alten Götter schwiegen über diesen unrühmlichen Abgang.'; Expected = $true },
+        @{ Name = 'German day quip'; Context = $germanDayContext; Candidate = '{DAY} beginnt unter grauem Himmel; die Krieger schärfen ihre Äxte für einen langen Morgen.'; Expected = $true }
     )
 
     foreach ($test in $tests) {
@@ -128,6 +138,14 @@ try {
             if ($test.Name -eq 'Valid day quip') {
                 Assert-True -Value ($result.Final -match '\bDay 42\b') -Name 'Exact day replacement'
                 Assert-True -Value ($result.Final -notmatch '\{DAY\}') -Name 'Day token removal'
+            }
+            if ($test.Name -eq 'German death quip') {
+                Assert-True -Value ($result.Final -match '\bTestPlayer\b') -Name 'German death exact player replacement'
+                Assert-True -Value ($result.Final -notmatch '\{PLAYER\}') -Name 'German death player token removal'
+            }
+            if ($test.Name -eq 'German day quip') {
+                Assert-True -Value ($result.Final -match '\b42\b') -Name 'German day exact number replacement'
+                Assert-True -Value ($result.Final -notmatch '\{DAY\}') -Name 'German day token removal'
             }
         }
 

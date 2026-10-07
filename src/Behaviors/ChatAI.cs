@@ -246,17 +246,20 @@ public class ChatAI : MonoBehaviour
 
     public void Ask(string prompt, bool deathQuip = false, bool dayQuip = false)
     {
-        StartRequest(AIRequestContext.Legacy(prompt, deathQuip, dayQuip));
+        StartRequest(AIRequestContext.Legacy(prompt, deathQuip, dayQuip)
+            .WithOutputLanguage(DiscordBotPlugin.AIOutputLanguage));
     }
 
     public void AskDeathQuip(string playerName, string sourceQuip)
     {
-        StartRequest(AIRequestContext.Death(playerName, sourceQuip));
+        StartRequest(AIRequestContext.Death(playerName, sourceQuip)
+            .WithOutputLanguage(DiscordBotPlugin.AIOutputLanguage));
     }
 
     public void AskDayQuip(int day, string sourceQuip)
     {
-        StartRequest(AIRequestContext.Day(day, sourceQuip));
+        StartRequest(AIRequestContext.Day(day, sourceQuip)
+            .WithOutputLanguage(DiscordBotPlugin.AIOutputLanguage));
     }
 
     private void StartRequest(AIRequestContext context)
@@ -512,7 +515,8 @@ public class ChatAI : MonoBehaviour
 
                 ConsumedDeathCharacters[rpc] = deathCharacterId;
                 string deathContext = SanitizeRemoteContext(request.context, 300);
-                serverContext = AIRequestContext.Death(deathPeer.m_playerName, deathContext);
+                serverContext = AIRequestContext.Death(deathPeer.m_playerName, deathContext)
+                    .WithOutputLanguage(DiscordBotPlugin.AIOutputLanguage);
                 break;
 
             case RemoteAIRequestKind.DayQuip:
@@ -531,7 +535,8 @@ public class ChatAI : MonoBehaviour
 
                 consumedDayQuip = currentDay;
                 string dayContext = SanitizeRemoteContext(request.context, 300);
-                serverContext = AIRequestContext.Day(currentDay, dayContext);
+                serverContext = AIRequestContext.Day(currentDay, dayContext)
+                    .WithOutputLanguage(DiscordBotPlugin.AIOutputLanguage);
                 break;
 
             default:
@@ -897,6 +902,16 @@ public class ChatAI : MonoBehaviour
         completed(MergeModels(configuredAvailable, discoveredIds));
     }
 
+    private static string ApplyOutputLanguage(string prompt)
+    {
+        string language = DiscordBotPlugin.AIOutputLanguage;
+        if (string.Equals(language, "Auto", StringComparison.OrdinalIgnoreCase)) return prompt;
+
+        return prompt +
+               $"\n\nLanguage requirement: Write the final response in {language}. " +
+               "Keep any required literal tokens such as {PLAYER} and {DAY} unchanged.";
+    }
+
     private IEnumerator PromptProvider(
         AIService provider,
         string key,
@@ -905,6 +920,7 @@ public class ChatAI : MonoBehaviour
         AIRequestPurpose purpose,
         Action<AIResult> completed)
     {
+        prompt = ApplyOutputLanguage(prompt);
         switch (provider)
         {
             case AIService.Gemini:

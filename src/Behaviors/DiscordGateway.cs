@@ -107,6 +107,7 @@ public class DiscordGatewayClient : MonoBehaviour
     
     private static void HandleChatMessage(Message message)
     {
+        if (!DiscordBotPlugin.DiscordToGameChat) return;
         instance?.OnLog?.Invoke($"Received discord chat message: username: {message.author?.username ?? "null"} - content: {message.content ?? "null"}");
         var content = message.content ?? "";
         
