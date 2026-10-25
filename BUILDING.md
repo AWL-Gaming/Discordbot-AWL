@@ -49,6 +49,16 @@ This produces `build\hexium\DiscordBot_v<version>.zip`.
 
 The build must complete with zero compiler errors. The inherited GIF encoder currently emits nullable-analysis warnings, but those warnings do not fail the build.
 
+## Gateway recovery regression checks
+
+Run the offline gateway lifecycle tests without Discord credentials:
+
+```powershell
+dotnet run --project tests/GatewayRecoveryTests/GatewayRecoveryTests.csproj --configuration Release
+```
+
+The tests cover missed heartbeat ACKs, resumed sessions, invalidated sessions, duplicate reconnect requests, token resets, and repeated failures.
+
 ## Local test deployment
 
 Do not replace a DLL while Valheim is running. Back up the installed DLL first, then copy the release DLL into the profile's plugin directory. Replace `<BepInEx directory>` with the BepInEx directory used by the test profile:

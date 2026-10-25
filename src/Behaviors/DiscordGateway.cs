@@ -38,10 +38,11 @@ public class DiscordGatewayClient : MonoBehaviour
     private CancellationTokenSource? cancellationTokenSource;
 
     private string? gatewayUrl;
-    private int sequenceNumber;
-    private string? sessionId;
-    private bool heartbeatAcknowledged = true;
+    private readonly GatewayRecoveryState gatewayState = new();
     private Coroutine? heartbeatCoroutine;
+    private Coroutine? reconnectCoroutine;
+    private Coroutine? listenCoroutine;
+    private Coroutine? messageQueueCoroutine;
     
     private bool isConnecting;
     private bool isConnected;
@@ -78,13 +79,17 @@ public class DiscordGatewayClient : MonoBehaviour
     private void OnDestroy()
     {
         shouldReconnect = false;
+        StopAllCoroutines();
         DisconnectWebSocket();
+        gatewayState.ResetForTokenChange();
         instance = null;
     }
 
     public void RestartForTokenChange()
     {
         StopAllCoroutines();
+        reconnectCoroutine = null;
+        gatewayState.ResetForTokenChange();
         DisconnectWebSocket();
         gatewayUrl = null;
         isConnecting = false;
@@ -151,9 +156,9 @@ public class DiscordGatewayClient : MonoBehaviour
 
     public void TriggerProcessing()
     {
-        if (isSending || messageQueue.Count <= 0) return;
+        if (isSending || !isConnected || messageQueue.Count <= 0) return;
         isSending = true;
-        StartCoroutine(ProcessMessageQueue());
+        messageQueueCoroutine = StartCoroutine(ProcessMessageQueue());
     }
 
     private IEnumerator ProcessMessageQueue()
@@ -166,20 +171,25 @@ public class DiscordGatewayClient : MonoBehaviour
         }
 
         isSending = false;
+        messageQueueCoroutine = null;
     }
 
-    
     #region Gateway Initialization
     private IEnumerator InitializeGateway()
     {
-        if (isConnecting || isConnected) yield break;
+        if (isConnecting || isConnected || !shouldReconnect) yield break;
         isConnecting = true;
         using UnityWebRequest request = UnityWebRequest.Get("https://discord.com/api/v10/gateway/bot");
         request.SetRequestHeader("Authorization", $"Bot {DiscordBotPlugin.BOT_TOKEN.Trim()}");
         request.SetRequestHeader("Content-Type", "application/json");
-        
+
         yield return request.SendWebRequest();
-        
+        if (!shouldReconnect)
+        {
+            isConnecting = false;
+            yield break;
+        }
+
         if (request.responseCode == 401 || request.responseCode == 403)
         {
             shouldReconnect = false;
@@ -190,98 +200,123 @@ public class DiscordGatewayClient : MonoBehaviour
 
         if (request.result == UnityWebRequest.Result.Success)
         {
-            JObject response = JObject.Parse(request.downloadHandler.text);
-            gatewayUrl = response["url"]?.ToString() ?? string.Empty;
-                
+            try
+            {
+                gatewayUrl = FormatGatewayUrl(JObject.Parse(request.downloadHandler.text)["url"]?.ToString() ?? "");
+            }
+            catch (Exception e)
+            {
+                OnError?.Invoke($"Failed to read gateway URL: {e.Message}");
+                gatewayUrl = null;
+            }
+
             if (!string.IsNullOrEmpty(gatewayUrl))
             {
-                gatewayUrl += "/?v=10&encoding=json";
                 yield return StartCoroutine(ConnectToGateway());
+                yield break;
             }
-            else
-            {
-                OnError?.Invoke("Failed to get gateway URL");
-                isConnecting = false;
-            }
+
+            OnError?.Invoke("Failed to get gateway URL");
         }
         else
         {
             OnError?.Invoke($"Failed to get gateway URL: {request.error}");
-            isConnecting = false;
-            
-            yield return retryConnectionDelay;
-            if (shouldReconnect)
-            {
-                StartCoroutine(InitializeGateway());
-            }
         }
+
+        isConnecting = false;
+        RequestReconnect();
     }
-    
+
+    private static string? FormatGatewayUrl(string? url)
+    {
+        if (url == null || url.Trim().Length == 0) return null;
+        return url.TrimEnd('/') + "/?v=10&encoding=json";
+    }
+
     #endregion
     
     #region WebSocket Connection
     
     private IEnumerator ConnectToGateway()
     {
-        websocket = new ClientWebSocket();
-        cancellationTokenSource = new CancellationTokenSource();
-        
-        Task connectTask = websocket.ConnectAsync(new Uri(gatewayUrl ?? ""), cancellationTokenSource.Token);
+        var socket = new ClientWebSocket();
+        var tokenSource = new CancellationTokenSource();
+        websocket = socket;
+        cancellationTokenSource = tokenSource;
+
+        Task connectTask;
+        try
+        {
+            connectTask = socket.ConnectAsync(new Uri(gatewayUrl ?? ""), tokenSource.Token);
+        }
+        catch (Exception e)
+        {
+            OnError?.Invoke($"Failed to connect: {e.Message}");
+            isConnecting = false;
+            RequestReconnect();
+            yield break;
+        }
+
         yield return new WaitUntil(() => connectTask.IsCompleted);
+        if (!ReferenceEquals(websocket, socket)) yield break;
 
         switch (connectTask.Status)
         {
             case TaskStatus.RanToCompletion:
                 isConnected = true;
                 isConnecting = false;
-                StartCoroutine(ListenForMessages());
+                listenCoroutine = StartCoroutine(ListenForMessages(socket, tokenSource.Token));
                 break;
             case TaskStatus.Canceled:
                 OnClosed?.Invoke("Connection task canceled");
                 isConnecting = false;
+                RequestReconnect();
                 break;
             case TaskStatus.Faulted:
-            {
                 OnError?.Invoke($"Failed to connect: {connectTask.Exception?.GetBaseException().Message}");
                 isConnecting = false;
-        
-                if (shouldReconnect)
-                {
-                    StartCoroutine(ReconnectAfterDelay());
-                }
-
+                RequestReconnect();
                 break;
-            }
             default:
-                OnError?.Invoke($"Failed to connect: {connectTask.Exception?.GetBaseException().Message}");
+                OnError?.Invoke("Failed to connect to Discord gateway");
                 isConnecting = false;
+                RequestReconnect();
                 break;
         }
     }
-    
-    private IEnumerator ListenForMessages()
+
+    private IEnumerator ListenForMessages(ClientWebSocket socket, CancellationToken cancellationToken)
     {
         byte[] buffer = new byte[BUFFER_SIZE];
-    
-        while (isConnected && websocket?.State == WebSocketState.Open && cancellationTokenSource != null)
+
+        while (isConnected && ReferenceEquals(websocket, socket) && socket.State == WebSocketState.Open)
         {
-            Task<WebSocketReceiveResult>? receiveTask = websocket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationTokenSource.Token);
-        
+            Task<WebSocketReceiveResult> receiveTask;
+            try
+            {
+                receiveTask = socket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
+            }
+            catch (Exception e)
+            {
+                OnError?.Invoke($"WebSocket receive error: {e.Message}");
+                OnWebSocketClose();
+                yield break;
+            }
+
             yield return new WaitUntil(() => receiveTask.IsCompleted);
-        
+            if (!isConnected || !ReferenceEquals(websocket, socket)) yield break;
+
             if (receiveTask.Status == TaskStatus.RanToCompletion)
             {
                 WebSocketReceiveResult result = receiveTask.Result;
-                
+
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
                     string message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    
                     try
                     {
                         GatewayEvent? payload = JsonConvert.DeserializeObject<GatewayEvent>(message, settings);
-                        if (payload == null) continue;
-                        HandleGatewayPayload(payload);
+                        if (payload != null) HandleGatewayPayload(payload);
                     }
                     catch (Exception e)
                     {
@@ -290,44 +325,44 @@ public class DiscordGatewayClient : MonoBehaviour
                 }
                 else if (result.MessageType == WebSocketMessageType.Close)
                 {
+                    if (result.CloseStatus.HasValue)
+                    {
+                        int closeCode = (int)result.CloseStatus.Value;
+                        if (closeCode is 4007 or 4009) gatewayState.InvalidateSession();
+                        if (closeCode is 4004 or 4010 or 4011 or 4012 or 4013 or 4014)
+                        {
+                            shouldReconnect = false;
+                            OnError?.Invoke($"Discord gateway rejected the connection (close code {closeCode}). Reconnect is paused until the bot configuration changes.");
+                        }
+                    }
                     OnClosed?.Invoke("WebSocket closed by server");
                     OnWebSocketClose();
-                    break;
+                    yield break;
                 }
             }
             else if (receiveTask.Status == TaskStatus.Canceled)
             {
-                OnClosed?.Invoke("WebSocket receive task canceled");
-                break;
+                if (shouldReconnect) OnWebSocketClose();
+                yield break;
             }
-            else if (receiveTask.Status == TaskStatus.Faulted)
+            else
             {
                 OnError?.Invoke($"WebSocket receive error: {receiveTask.Exception?.GetBaseException().Message}");
                 OnWebSocketClose();
-                break;
+                yield break;
             }
         }
+
+        if (isConnected && ReferenceEquals(websocket, socket)) OnWebSocketClose();
     }
-    
+
     private void OnWebSocketClose()
     {
         OnClosed?.Invoke("WebSocket connection closed");
-        isConnected = false;
-        
-        if (heartbeatCoroutine != null)
-        {
-            StopCoroutine(heartbeatCoroutine);
-            heartbeatCoroutine = null;
-        }
-        
-        OnDisconnected?.Invoke();
-        
-        if (shouldReconnect)
-        {
-            StartCoroutine(ReconnectAfterDelay());
-        }
+        DisconnectWebSocket();
+        RequestReconnect();
     }
-    
+
     #endregion
     
     #region Gateway Protocol Handling
@@ -335,7 +370,7 @@ public class DiscordGatewayClient : MonoBehaviour
     public class GatewayEvent
     {
         public int op;
-        public JObject? d;
+        public JToken? d;
         public int? s;
         public string? t;
     }
@@ -360,35 +395,33 @@ public class DiscordGatewayClient : MonoBehaviour
     private void HandleGatewayPayload(GatewayEvent? payload)
     {
         if (payload == null) return;
-        if (payload.s.HasValue)
-        {
-            sequenceNumber = payload.s.Value;
-        }
+        gatewayState.OnDispatchSequence(payload.s);
+
         switch ((Opcodes)payload.op)
         {
-            case Opcodes.Dispatch: 
-                HandleDispatchEvent(payload.t, payload.d);
+            case Opcodes.Dispatch:
+                HandleDispatchEvent(payload.t, payload.d as JObject);
                 break;
             case Opcodes.Heartbeat:
                 SendHeartbeat();
                 break;
             case Opcodes.Reconnect:
-                StartCoroutine(ReconnectAfterDelay());
+                RequestReconnect();
                 break;
             case Opcodes.InvalidSession:
-                OnError?.Invoke("Invalid session, re-identifying...");
-                sessionId = null;
-                SendIdentify();
+                bool resumable = payload.d?.Type == JTokenType.Boolean && payload.d.Value<bool>();
+                OnLog?.Invoke(resumable ? "Discord gateway requested a session resume" : "Discord gateway session expired, reconnecting");
+                RequestReconnect(invalidateSession: !resumable);
                 break;
             case Opcodes.Hello:
-                HandleHello(payload.d);
+                HandleHello(payload.d as JObject);
                 break;
-            case Opcodes.HeartbeatOK: 
-                heartbeatAcknowledged = true;
+            case Opcodes.HeartbeatOK:
+                gatewayState.OnHeartbeatAck();
                 break;
         }
     }
-    
+
     private void HandleDispatchEvent(string? eventType, JObject? data)
     {
         if (data == null) return;
@@ -409,20 +442,24 @@ public class DiscordGatewayClient : MonoBehaviour
     private void HandleHello(JObject? data)
     {
         if (data == null) return;
+        gatewayState.OnHello();
         if (heartbeatCoroutine != null)
         {
             StopCoroutine(heartbeatCoroutine);
+            heartbeatCoroutine = null;
         }
+
         heartbeatCoroutine = StartCoroutine(HeartbeatLoop((data["heartbeat_interval"]?.Value<int>() ?? 41250) / 1000f));
-        if (string.IsNullOrEmpty(sessionId)) SendIdentify();
-        else SendResume();
+        if (gatewayState.CanResume) SendResume();
+        else SendIdentify();
     }
-    
+
     private void HandleReady(JToken data)
     {
-        sessionId = data["session_id"]?.Value<string>();
+        gatewayState.OnReady(data["session_id"]?.Value<string>(), data["resume_gateway_url"]?.Value<string>());
         OnConnected?.Invoke();
     }
+
     private void HandleMessageCreate(JObject? data)
     {
         if (data == null) return;
@@ -504,25 +541,26 @@ public class DiscordGatewayClient : MonoBehaviour
             d = new
             {
                 token = DiscordBotPlugin.BOT_TOKEN,
-                session_id = sessionId,
-                seq = sequenceNumber
+                session_id = gatewayState.SessionId,
+                seq = gatewayState.LastSequence
             }
         };
         messageQueue.Enqueue(resume, true);
     }
-    
+
     private void SendHeartbeat()
     {
         if (!isConnected) return;
-        
+        gatewayState.OnHeartbeatSent();
+
         var heartbeat = new
         {
             op = (int)Opcodes.Heartbeat,
-            d = sequenceNumber
+            d = gatewayState.LastSequence
         };
         messageQueue.Enqueue(heartbeat, true);
     }
-    
+
     private IEnumerator SendGatewayMessage(object payload)
     {
         if (websocket?.State != WebSocketState.Open || cancellationTokenSource == null) yield break;
@@ -546,78 +584,110 @@ public class DiscordGatewayClient : MonoBehaviour
     private IEnumerator HeartbeatLoop(float intervalSeconds)
     {
         yield return new WaitForSeconds(UnityEngine.Random.Range(0f, intervalSeconds));
-        
+
         while (isConnected)
         {
-            if (!heartbeatAcknowledged)
+            if (!gatewayState.HeartbeatAcknowledged)
             {
                 OnError?.Invoke("Heartbeat not acknowledged, reconnecting...");
-                StartCoroutine(ReconnectAfterDelay());
+                RequestReconnect();
                 yield break;
             }
-            
-            heartbeatAcknowledged = false;
+
             SendHeartbeat();
-            
             yield return new WaitForSeconds(intervalSeconds);
         }
     }
-    
+
     #endregion
     
     #region Reconnection
     
+    private void RequestReconnect(bool invalidateSession = false)
+    {
+        if (!shouldReconnect)
+        {
+            if (invalidateSession) gatewayState.InvalidateSession();
+            return;
+        }
+        if (!gatewayState.TryBeginReconnect(invalidateSession)) return;
+        reconnectCoroutine = StartCoroutine(ReconnectAfterDelay());
+    }
+
     private IEnumerator ReconnectAfterDelay()
     {
         DisconnectWebSocket();
-        
-        if (!shouldReconnect) yield break;
-        
+
+        if (!shouldReconnect)
+        {
+            gatewayState.EndReconnect();
+            reconnectCoroutine = null;
+            yield break;
+        }
+
         OnError?.Invoke("Attempting to reconnect in 5 seconds...");
         yield return retryConnectionDelay;
-        
-        if (shouldReconnect)
+
+        gatewayState.EndReconnect();
+        reconnectCoroutine = null;
+        if (!shouldReconnect) yield break;
+
+        if (gatewayState.CanResume && !string.IsNullOrWhiteSpace(gatewayState.ResumeGatewayUrl))
         {
-            StartCoroutine(InitializeGateway());
+            gatewayUrl = FormatGatewayUrl(gatewayState.ResumeGatewayUrl);
+            isConnecting = true;
+            yield return StartCoroutine(ConnectToGateway());
+        }
+        else
+        {
+            yield return StartCoroutine(InitializeGateway());
         }
     }
-    
+
     private void DisconnectWebSocket()
     {
+        bool wasConnected = isConnected;
         isConnected = false;
+        isConnecting = false;
+        gatewayState.OnHello();
         messageQueue.Clear();
-        if (cancellationTokenSource != null)
-        {
-            cancellationTokenSource.Cancel();
-            cancellationTokenSource.Dispose();
-            cancellationTokenSource = null;
-        }
-        
-        if (websocket != null)
-        {
-            if (websocket.State == WebSocketState.Open)
-            {
-                try
-                {
-                    websocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
-                }
-                catch (Exception e)
-                {
-                    OnError?.Invoke($"Error closing WebSocket: {e.Message}");
-                }
-            }
-            
-            websocket.Dispose();
-            websocket = null;
-        }
-        
+        isSending = false;
+
         if (heartbeatCoroutine != null)
         {
             StopCoroutine(heartbeatCoroutine);
             heartbeatCoroutine = null;
         }
+        if (listenCoroutine != null)
+        {
+            StopCoroutine(listenCoroutine);
+            listenCoroutine = null;
+        }
+        if (messageQueueCoroutine != null)
+        {
+            StopCoroutine(messageQueueCoroutine);
+            messageQueueCoroutine = null;
+        }
+
+        CancellationTokenSource? tokenSource = cancellationTokenSource;
+        cancellationTokenSource = null;
+        if (tokenSource != null)
+        {
+            tokenSource.Cancel();
+            tokenSource.Dispose();
+        }
+
+        ClientWebSocket? socket = websocket;
+        websocket = null;
+        if (socket != null)
+        {
+            socket.Abort();
+            socket.Dispose();
+        }
+
+        if (wasConnected) OnDisconnected?.Invoke();
     }
-    
+
     #endregion
     
     private class PriorityQueue<T>

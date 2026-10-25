@@ -1,3 +1,8 @@
+# 1.4.10
+
+- Fixed Discord gateway reconnect loops after a missed heartbeat acknowledgment.
+- Improved session recovery so Discord-to-game chat and commands reconnect reliably after interruptions.
+
 # 1.4.9
 
 - Added a configurable AI output language for generated messages across supported AI providers.

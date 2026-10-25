@@ -4,10 +4,10 @@ AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://githu
 
 Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/NOTICE.md).
 
-## AWL 1.4.9 highlights
+## AWL 1.4.10 highlights
 
-- AI-generated responses can now use a configurable output language across the supported AI providers.
-- Chat relay now has separate `Game To Discord` and `Discord To Game` switches while the existing `Enabled` setting remains the master switch for backward compatibility.
+- Discord gateway reconnects recover after a missed heartbeat acknowledgment without restarting Valheim.
+- Session resume and invalid-session recovery restore Discord-to-game chat and commands after connection interruptions.
 
 ## Prerequisites
 
