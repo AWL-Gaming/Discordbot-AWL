@@ -150,6 +150,7 @@
         <Compile Include="src\Behaviors\Discord.cs" />
         <Compile Include="src\Behaviors\DiscordGateway.cs" />
         <Compile Include="src\Behaviors\GatewayRecoveryState.cs" />
+        <Compile Include="src\Behaviors\TrustedWebhookCommandPolicy.cs" />
         <Compile Include="src\Behaviors\ImageHud.cs" />
         <Compile Include="src\Behaviors\Recorder.cs" />
         <Compile Include="src\Behaviors\Screenshot.cs" />

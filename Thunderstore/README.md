@@ -4,10 +4,9 @@ AWL Gaming maintenance fork of the original [RustyMods DiscordBot](https://githu
 
 Original author: **RustyMods**. AWL Gaming maintains this fork and does not claim authorship of the upstream implementation. See [NOTICE.md](https://github.com/AWL-Gaming/Discordbot-AWL/blob/main/NOTICE.md).
 
-## AWL 1.4.10 highlights
+## AWL 1.4.11 highlights
 
-- Discord gateway reconnects recover after a missed heartbeat acknowledgment without restarting Valheim.
-- Session resume and invalid-session recovery restore Discord-to-game chat and commands after connection interruptions.
+- Trusted Discord webhooks can optionally announce scheduled restarts and request world saves with strict identity and command restrictions.
 
 ## Prerequisites
 
@@ -91,6 +90,27 @@ Configure webhook URLs, the Discord bot token, and server AI API keys only in th
 `Webhook URL` requires the complete Discord webhook URL. `Channel ID` requires only the numeric Discord channel ID. They are not interchangeable.
 
 Config file edits are watched and reloaded automatically after saving. No console command is required. Replacing `DiscordBot.dll` is not hot-reloadable and requires restarting the affected server or client process.
+
+### Trusted incoming webhook commands (optional)
+
+Incoming Discord webhooks can run the restricted server commands `!message` and `!save` only when explicitly enabled. This is separate from the `Discord Admin` usernames used by human administrators.
+
+In the dedicated server's `BepInEx/config/RustyMods.DiscordBot.cfg`, configure:
+
+```ini
+[4 - Commands]
+Channel ID = 222222222222222222
+Allow Trusted Webhooks = On
+Trusted Webhooks = 111111111111111111:222222222222222222:333333333333333333
+Trusted Webhook Command Allowlist = !message,!save
+```
+
+Replace the example numeric IDs. Each trusted entry is `webhook ID:channel ID:guild ID`; multiple entries may be separated by commas. The channel ID in each entry must also match the existing **4 - Commands / Channel ID** setting. These new settings default to **Off / empty**, are not synchronized to clients, and can be reloaded by editing the server config file. Malformed entries or unsupported commands disable authorization (fail closed). Only `!message` and `!save` are supported, even if another command is listed.
+
+The webhook ID is the numeric segment of the incoming Discord webhook URL, not the full URL and not its display name. Treat the full webhook URL and token as secrets. Store the URL in GitHub Actions secrets, limit access to trusted protected workflows, and never expose it to untrusted pull-request jobs. The bot must have Message Content Intent enabled. Webhook messages cannot run any human-admin command outside the explicit allowlist or be forwarded as player chat.
+
+The accepted formats are `!message <plain-text announcement>` (1 to 200 characters, no markup or control characters) and exactly `!save` (no arguments). Messages are deduplicated by Discord message ID. Across all trusted webhooks, announcements are limited to one every 10 seconds and forced saves to one every 2 minutes. An HTTP success from Discord confirms webhook delivery only, **not** completion of a Valheim world save. Before CI shuts down a server, confirm the save completed using the server's normal save-completion evidence or safe shutdown procedure.
+
 
 Here's what your configuration might look like:
 
