@@ -39,6 +39,7 @@ public class DiscordGatewayClient : MonoBehaviour
 
     private string? gatewayUrl;
     private readonly GatewayRecoveryState gatewayState = new();
+    private readonly TrustedWebhookCommandPolicy trustedWebhookPolicy = new();
     private Coroutine? heartbeatCoroutine;
     private Coroutine? reconnectCoroutine;
     private Coroutine? listenCoroutine;
@@ -467,6 +468,34 @@ public class DiscordGatewayClient : MonoBehaviour
         {
             Message? message = JsonConvert.DeserializeObject<Message>(data.ToString(), settings);
             if (message == null) return;
+            // Incoming webhooks have a Discord-authenticated webhook_id. Always
+            // handle them separately, even when their display name resembles an admin.
+            if (message.webhook_id != null)
+            {
+                if (trustedWebhookPolicy.TryAuthorize(
+                        ZNet.instance?.IsServer() ?? false,
+                        DiscordBotPlugin.AllowTrustedWebhooks,
+                        DiscordBotPlugin.TrustedWebhookOrigins,
+                        DiscordBotPlugin.TrustedWebhookCommands,
+                        Channel.Commands.ToID(),
+                        message.webhook_id,
+                        message.author?.id,
+                        message.guild_id,
+                        message.channel_id,
+                        message.id,
+                        message.type,
+                        message.content,
+                        DateTime.UtcNow,
+                        out string[] arguments) &&
+                    DiscordCommands.m_commands.TryGetValue(arguments[0], out var trustedCommand))
+                {
+                    trustedCommand.Run(arguments);
+                    OnLog?.Invoke("Executed trusted Discord webhook command: " + arguments[0]);
+                }
+
+                return; // Never relay webhook messages as player chat or human commands.
+            }
+
             if (message.author?.bot == true || string.IsNullOrEmpty(message.content)) return;
 
             if (Channel.Commands.ToID() == Channel.Chat.ToID() && message.channel_id == Channel.Commands.ToID())
@@ -719,6 +748,9 @@ public class Message
     public string? timestamp;
     public string? id;
     public string? channel_id;
+    public string? guild_id;
+    public string? webhook_id;
+    public int? type;
     public Author? author;
     public string? content;
 }

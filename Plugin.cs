@@ -70,7 +70,7 @@ public enum ChatDisplay { Player, Bot }
 public class DiscordBotPlugin : BaseUnityPlugin
 {
     internal const string ModName = "DiscordBot";
-    internal const string ModVersion = "1.4.10";
+    internal const string ModVersion = "1.4.11";
     internal const string Author = "RustyMods";
     private const string ModGUID = Author + "." + ModName;
     private const string ConfigFileName = ModGUID + ".cfg";
@@ -120,6 +120,9 @@ public class DiscordBotPlugin : BaseUnityPlugin
     #region commands
     private static ConfigEntry<string> m_commandWebhookURL = null!;
     private static ConfigEntry<string> m_commandChannelID = null!;
+    private static ConfigEntry<Toggle> m_allowTrustedWebhooks = null!;
+    private static ConfigEntry<string> m_trustedWebhookOrigins = null!;
+    private static ConfigEntry<string> m_trustedWebhookCommands = null!;
     #endregion
     #region death
     private static ConfigEntry<string> m_deathFeedURL = null!;
@@ -200,6 +203,9 @@ public class DiscordBotPlugin : BaseUnityPlugin
     public static string BOT_TOKEN => m_botToken.Value;
     public static string ChatChannelID => m_chatChannelID.Value;
     public static string CommandChannelID => m_commandChannelID.Value;
+    public static bool AllowTrustedWebhooks => IsServer && m_allowTrustedWebhooks.Value is Toggle.On;
+    public static string TrustedWebhookOrigins => IsServer ? m_trustedWebhookOrigins.Value : string.Empty;
+    public static string TrustedWebhookCommands => IsServer ? m_trustedWebhookCommands.Value : string.Empty;
     public static string ChatWebhookURL => IsServer ? m_chatWebhookURL.Value : string.Empty;
     public static string CommandWebhookURL => IsServer ? m_commandWebhookURL.Value : string.Empty;
     public static string NoticeWebhookURL => IsServer ? m_notificationWebhookURL.Value : string.Empty;
@@ -449,6 +455,9 @@ public class DiscordBotPlugin : BaseUnityPlugin
         {
             CustomDrawer = StringListConfig.Draw
         }));
+        m_allowTrustedWebhooks = config("4 - Commands", "Allow Trusted Webhooks", Toggle.Off, "Allow strictly identified Discord webhooks to invoke selected safe commands [Server Only]", false);
+        m_trustedWebhookOrigins = config("4 - Commands", "Trusted Webhooks", "", "Comma-separated webhookID:channelID:guildID triples. Each must match the command channel [Server Only]", false);
+        m_trustedWebhookCommands = config("4 - Commands", "Trusted Webhook Command Allowlist", "", "Only !message and !save are supported. Explicitly list permitted commands, separated by commas [Server Only]", false);
         m_enableJobs = config("4 - Commands", "Jobs", Toggle.On, "If on, jobs are enabled");
 
         m_botToken = config("5 - Setup", "BOT TOKEN", "", "Add bot token here, server only", false);

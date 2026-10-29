@@ -1,3 +1,7 @@
+# 1.4.11
+
+- Added opt-in trusted Discord webhook commands for server announcements (!message) and world saves (!save).
+- Restricted webhook commands to approved webhook, channel, and guild IDs with input validation, replay protection, and cooldowns.
 # 1.4.10
 
 - Fixed Discord gateway reconnect loops after a missed heartbeat acknowledgment.

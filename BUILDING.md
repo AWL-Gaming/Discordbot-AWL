@@ -59,6 +59,17 @@ dotnet run --project tests/GatewayRecoveryTests/GatewayRecoveryTests.csproj --co
 
 The tests cover missed heartbeat ACKs, resumed sessions, invalidated sessions, duplicate reconnect requests, token resets, and repeated failures.
 
+## Trusted webhook command regression checks
+
+Run the offline policy test suite without Discord credentials or a running server:
+
+```powershell
+dotnet run --project tests/TrustedWebhookCommandTests/TrustedWebhookCommandTests.csproj --configuration Release
+```
+
+The suite covers explicit opt-in, verified webhook identity and guild/channel restrictions, narrowly allowed commands, replay and cooldown limits, malformed configuration, and announcement input validation. The existing Discord admin command handler remains independent. Native Valheim testing is required before publishing.
+
+
 ## Local test deployment
 
 Do not replace a DLL while Valheim is running. Back up the installed DLL first, then copy the release DLL into the profile's plugin directory. Replace `<BepInEx directory>` with the BepInEx directory used by the test profile:
